@@ -39,4 +39,5 @@ userSchema.methods.matchPassword = async function matchPassword(
 };
 
 export const User =
-  mongoose.models.User || mongoose.model("LogisticsUser", userSchema);
+  mongoose.models.LogisticsUser ||
+  mongoose.model("LogisticsUser", userSchema, "logisticsusers");

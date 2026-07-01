@@ -24,7 +24,7 @@ const orderSchema = new mongoose.Schema(
   {
     rider: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "LogisticsUser",
       required: true,
       index: true,
     },
