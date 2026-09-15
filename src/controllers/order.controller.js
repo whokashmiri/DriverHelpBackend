@@ -16,17 +16,54 @@ function parseDate(value, fieldName) {
   return date;
 }
 
-function getFile(files, fieldName) {
-  const file = files?.[fieldName]?.[0];
+function getFile(
+  files,
+  fieldName,
+) {
+  const file =
+    files?.[fieldName]?.[0];
 
   if (!file) {
-    const error = new Error(`${fieldName} is required`);
+    const error = new Error(
+      `${fieldName} is required`,
+    );
+
     error.statusCode = 400;
+
+    throw error;
+  }
+
+  if (
+    !file.buffer ||
+    file.buffer.length === 0
+  ) {
+    const error = new Error(
+      `${fieldName} is empty`,
+    );
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  if (
+    !file.mimetype?.startsWith(
+      "image/",
+    )
+  ) {
+    const error = new Error(
+      `${fieldName} must be an image`,
+    );
+
+    error.statusCode = 400;
+
     throw error;
   }
 
   return file;
 }
+
+
 
 /**
  * DRIVER
@@ -51,12 +88,51 @@ export const createPickupOrder = asyncHandler(async (req, res) => {
     "pickupTime"
   );
 
+  const existingOrder =
+  await Order.findOne({
+    rider: req.user._id,
+    status: "picked_up",
+  }).select("_id");
+
+if (existingOrder) {
+  res.status(409);
+
+  throw new Error(
+    "Complete the current order before creating another pickup",
+  );
+}
+
+
+console.log(
+  "[Pickup] file received",
+  {
+    fieldname:
+      pickupFile.fieldname,
+
+    mimetype:
+      pickupFile.mimetype,
+
+    size:
+      pickupFile.size,
+
+    bufferSize:
+      pickupFile.buffer?.length,
+  },
+);
   const pickupUpload =
     await uploadBufferToCloudinary(
       pickupFile.buffer,
       "delivery-app/pickup"
     );
 
+    if (
+  !pickupUpload?.secure_url ||
+  !pickupUpload?.public_id
+) {
+  throw new Error(
+    "Pickup image upload failed",
+  );
+}
   const order = await Order.create({
     rider: req.user._id,
 
@@ -87,77 +163,136 @@ export const createPickupOrder = asyncHandler(async (req, res) => {
  * Step 2:
  * Driver takes delivery photo and completes the order.
  */
-export const completeOrderDelivery = asyncHandler(
-  async (req, res) => {
-    if (req.user.role !== "driver") {
-      res.status(403);
-      throw new Error("Only drivers can complete orders");
-    }
+export const completeOrderDelivery =
+  asyncHandler(
+    async (req, res) => {
+      if (
+        req.user.role !==
+        "driver"
+      ) {
+        res.status(403);
 
-    const deliveryFile = getFile(
-      req.files,
-      "deliveryPhoto"
-    );
+        throw new Error(
+          "Only drivers can complete orders",
+        );
+      }
 
-    const deliveryTime = parseDate(
-      req.body.deliveryTime,
-      "deliveryTime"
-    );
+      const deliveryFile =
+        getFile(
+          req.files,
+          "deliveryPhoto",
+        );
 
-    const order = await Order.findOne({
-      _id: req.params.id,
-      rider: req.user._id,
-      status: "picked_up",
-    });
+      const deliveryTime =
+        parseDate(
+          req.body.deliveryTime,
+          "deliveryTime",
+        );
 
-    if (!order) {
-      res.status(404);
-      throw new Error("Active order not found");
-    }
+      const order =
+        await Order.findOne({
+          _id: req.params.id,
 
-    if (
-      deliveryTime.getTime() <
-      order.pickupTime.getTime()
-    ) {
-      res.status(400);
-      throw new Error(
-        "deliveryTime cannot be before pickupTime"
-      );
-    }
+          rider:
+            req.user._id,
 
-    const deliveryUpload =
-      await uploadBufferToCloudinary(
-        deliveryFile.buffer,
-        "delivery-app/delivery"
-      );
+          status:
+            "picked_up",
+        });
 
-    order.deliveryPhoto = {
-      url: deliveryUpload.secure_url,
-      publicId: deliveryUpload.public_id,
-      takenAt: deliveryTime,
-    };
+      if (!order) {
+        res.status(404);
 
-    order.deliveryTime = deliveryTime;
+        throw new Error(
+          "Active order not found",
+        );
+      }
 
-    order.durationSeconds = Math.floor(
-      (
-        deliveryTime.getTime() -
+      if (
+        deliveryTime.getTime() <
         order.pickupTime.getTime()
-      ) / 1000
-    );
+      ) {
+        res.status(400);
 
-    order.status = "delivered";
+        throw new Error(
+          "deliveryTime cannot be before pickupTime",
+        );
+      }
 
-    await order.save();
+      console.log(
+        "[Delivery] file received",
+        {
+          fieldname:
+            deliveryFile.fieldname,
 
-    res.json({
-      success: true,
-      message: "Order delivered successfully",
-      order,
-    });
-  }
-);
+          mimetype:
+            deliveryFile.mimetype,
 
+          size:
+            deliveryFile.size,
+
+          bufferSize:
+            deliveryFile.buffer
+              ?.length,
+        },
+      );
+
+      const deliveryUpload =
+        await uploadBufferToCloudinary(
+          deliveryFile.buffer,
+          "delivery-app/delivery",
+        );
+
+      if (
+        !deliveryUpload
+          ?.secure_url ||
+        !deliveryUpload
+          ?.public_id
+      ) {
+        throw new Error(
+          "Delivery image upload failed",
+        );
+      }
+
+      order.deliveryPhoto = {
+        url:
+          deliveryUpload
+            .secure_url,
+
+        publicId:
+          deliveryUpload
+            .public_id,
+
+        takenAt:
+          deliveryTime,
+      };
+
+      order.deliveryTime =
+        deliveryTime;
+
+      order.durationSeconds =
+        Math.floor(
+          (
+            deliveryTime.getTime() -
+            order.pickupTime.getTime()
+          ) / 1000,
+        );
+
+      order.status =
+        "delivered";
+
+      await order.save();
+
+      res.json({
+        success: true,
+
+        message:
+          "Order delivered successfully",
+
+        order,
+      });
+    },
+  );
 /**
  * DRIVER
  * Get driver's own orders.
