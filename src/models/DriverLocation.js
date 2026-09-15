@@ -1,0 +1,72 @@
+import mongoose from "mongoose";
+
+const driverLocationSchema = new mongoose.Schema(
+  {
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LogisticsUser",
+      required: true,
+      unique: true,
+      index: true,
+    },
+
+    supervisor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LogisticsUser",
+      required: true,
+      index: true,
+    },
+
+    latitude: {
+      type: Number,
+      required: true,
+      min: -90,
+      max: 90,
+    },
+
+    longitude: {
+      type: Number,
+      required: true,
+      min: -180,
+      max: 180,
+    },
+
+    accuracy: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    speed: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    heading: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 360,
+    },
+
+    recordedAt: {
+      type: Date,
+      required: true,
+      default: Date.now,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+driverLocationSchema.index({
+  supervisor: 1,
+  recordedAt: -1,
+});
+
+export const DriverLocation =
+  mongoose.models.DriverLocation ||
+  mongoose.model("DriverLocation", driverLocationSchema);

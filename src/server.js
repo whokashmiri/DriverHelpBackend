@@ -1,24 +1,52 @@
 import dotenv from "dotenv";
+import http from "http";
+
 dotenv.config();
 
-// console.log("ENV CHECK FROM server.js");
-// console.log("PORT:", process.env.PORT);
-// console.log("Mongo loaded:", Boolean(process.env.MONGO_URI));
-// console.log("JWT loaded:", Boolean(process.env.JWT_SECRET));
-// console.log("Cloud name:", process.env.CLOUDINARY_CLOUD_NAME);
-// console.log("Cloudinary key loaded:", Boolean(process.env.CLOUDINARY_API_KEY));
-// console.log(
-//   "Cloudinary secret loaded:",
-//   Boolean(process.env.CLOUDINARY_API_SECRET)
-// );
+const { default: app } =
+  await import("./app.js");
 
-const { default: app } = await import("./app.js");
-const { connectDB } = await import("./config/db.js");
+const { connectDB } =
+  await import("./config/db.js");
 
-const PORT = process.env.PORT || 5000;
+const { initializeSocket } =
+  await import("./sockets/index.js");
 
+const PORT =
+  process.env.PORT || 5000;
+
+/**
+ * Connect MongoDB first.
+ */
 await connectDB();
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+/**
+ * Create HTTP server from Express.
+ */
+const server =
+  http.createServer(app);
+
+/**
+ * Attach Socket.IO to same server.
+ */
+const io =
+  initializeSocket(server);
+
+/**
+ * Make io available if we need it later
+ * from REST controllers.
+ */
+app.set("io", io);
+
+/**
+ * Start HTTP + Socket.IO server.
+ */
+server.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `Server running on port ${PORT}`
+    );
+  }
+);

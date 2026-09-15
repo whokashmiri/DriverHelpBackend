@@ -6,10 +6,12 @@ const photoSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
     publicId: {
       type: String,
       required: true,
     },
+
     takenAt: {
       type: Date,
       required: true,
@@ -23,6 +25,13 @@ const photoSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     rider: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LogisticsUser",
+      required: true,
+      index: true,
+    },
+
+    supervisor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LogisticsUser",
       required: true,
@@ -52,11 +61,16 @@ const orderSchema = new mongoose.Schema(
     durationSeconds: {
       type: Number,
       default: null,
+      min: 0,
     },
 
     status: {
       type: String,
-      enum: ["picked_up", "delivered"],
+      enum: [
+        "picked_up",
+        "delivered",
+        "cancelled",
+      ],
       default: "picked_up",
       index: true,
     },
@@ -72,5 +86,22 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
+orderSchema.index({
+  supervisor: 1,
+  createdAt: -1,
+});
+
+orderSchema.index({
+  rider: 1,
+  createdAt: -1,
+});
+
+orderSchema.index({
+  supervisor: 1,
+  status: 1,
+  createdAt: -1,
+});
+
 export const Order =
-  mongoose.models.Order || mongoose.model("Order", orderSchema);
+  mongoose.models.Order ||
+  mongoose.model("Order", orderSchema);
