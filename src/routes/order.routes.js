@@ -1,5 +1,4 @@
 import express from "express";
-import multer from "multer";
 
 import {
   completeOrderDelivery,
@@ -11,23 +10,12 @@ import {
 } from "../controllers/order.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
+import { upload } from "../middleware/upload.middleware.js";
 
 const router = express.Router();
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-
-  limits: {
-    fileSize: 8 * 1024 * 1024,
-  },
-});
-
 router.use(protect);
 
-/**
- * DRIVER
- * Create pickup order.
- */
 router.post(
   "/pickup",
   upload.fields([
@@ -36,13 +24,9 @@ router.post(
       maxCount: 1,
     },
   ]),
-  createPickupOrder
+  createPickupOrder,
 );
 
-/**
- * DRIVER
- * Complete delivery.
- */
 router.patch(
   "/:id/delivery",
   upload.fields([
@@ -51,45 +35,27 @@ router.patch(
       maxCount: 1,
     },
   ]),
-  completeOrderDelivery
+  completeOrderDelivery,
 );
 
-/**
- * DRIVER
- * Current active/picked-up order.
- */
 router.get(
   "/active",
-  getActiveOrder
+  getActiveOrder,
 );
 
-/**
- * DRIVER
- * Driver's own orders.
- */
 router.get(
   "/my",
-  getMyOrders
+  getMyOrders,
 );
 
-/**
- * DRIVER
- * One own order.
- */
 router.get(
   "/:id",
-  getOrderById
+  getOrderById,
 );
 
-/**
- * DRIVER
- * Delete own order.
- *
- * Consider removing this later.
- */
 router.delete(
   "/:id",
-  deleteOrder
+  deleteOrder,
 );
 
 export default router;
