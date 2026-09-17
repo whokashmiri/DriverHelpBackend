@@ -307,11 +307,6 @@ export const getDriverLocation = asyncHandler(
 );
 
 
-/**
- * SUPERVISOR
- *
- * Get location history of one driver's shift.
- */
 export const getDriverShiftLocationHistory = asyncHandler(
   async (req, res) => {
     if (req.user.role !== "supervisor") {

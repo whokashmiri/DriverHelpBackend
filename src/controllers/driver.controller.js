@@ -5,17 +5,11 @@ import { DriverShift } from "../models/DriverShift.js";
 
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-/**
- * Get today's start/end in Riyadh time.
- *
- * Saudi Arabia is always UTC+3.
- */
+
 function getRiyadhDayRange() {
   const now = new Date();
 
-  /*
-   * Convert current time to Riyadh.
-   */
+  
   const riyadhNow = new Date(
     now.toLocaleString("en-US", {
       timeZone: "Asia/Riyadh",
@@ -26,11 +20,7 @@ function getRiyadhDayRange() {
   const month = riyadhNow.getMonth();
   const day = riyadhNow.getDate();
 
-  /*
-   * Riyadh midnight converted to UTC.
-   *
-   * Riyadh = UTC+3
-   */
+
   const start = new Date(
     Date.UTC(
       year,
@@ -155,10 +145,7 @@ export const createDriver = asyncHandler(
         isActive:
           driver.isActive,
 
-        /*
-         * Newly-created driver has not
-         * started a shift today.
-         */
+    
         workStatus:
           "not_started",
       },
@@ -166,21 +153,7 @@ export const createDriver = asyncHandler(
   },
 );
 
-/**
- * GET SUPERVISOR DRIVERS
- *
- * workStatus:
- *
- * "working"
- * = driver has started at least one shift today
- *
- * "not_started"
- * = driver has not started any shift today
- *
- * IMPORTANT:
- * A driver who starts and later ends their shift
- * still remains "working" for today's dashboard.
- */
+
 export const getMyDrivers = asyncHandler(
   async (req, res) => {
     const drivers = await User.find({

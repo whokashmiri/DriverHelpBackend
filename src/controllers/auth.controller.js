@@ -2,13 +2,6 @@ import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { generateToken } from "../utils/generateToken.js";
 
-/**
- * Temporary/general registration.
- * Later:
- * - Admin creates supervisors
- * - Supervisor creates drivers
- * - Public registration can be removed
- */
 export const register = asyncHandler(async (req, res) => {
   const {
     iqamaId,
@@ -53,7 +46,7 @@ export const register = asyncHandler(async (req, res) => {
     name: cleanName,
     password,
 
-    // Never trust a public client to assign its own role.
+    
     role: "driver",
   });
 

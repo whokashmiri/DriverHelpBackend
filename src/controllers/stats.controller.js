@@ -9,10 +9,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const TIME_ZONE = "Asia/Riyadh";
 
-/**
- * Build today/week/month boundaries in Riyadh,
- * then convert them to UTC Dates for MongoDB.
- */
+
 function getPeriodRange(period) {
   const now = DateTime.now().setZone(TIME_ZONE);
 
@@ -97,12 +94,7 @@ function getCustomRange(from, to) {
 }
 
 
-/**
- * Calculates how many seconds of a shift overlap
- * a requested time range.
- *
- * Important for overnight shifts.
- */
+
 function getShiftOverlapSeconds(
   shiftStart,
   shiftEnd,
@@ -127,24 +119,13 @@ function getShiftOverlapSeconds(
 }
 
 
-/**
- * Get total worked seconds for one driver
- * inside a particular date range.
- */
+
 async function getDriverWorkedSeconds(
   driverId,
   start,
   end
 ) {
-  /**
-   * Find any shift that overlaps the reporting range.
-   *
-   * Shift:
-   *
-   * startedAt < rangeEnd
-   * AND
-   * endedAt > rangeStart
-   */
+
   const shifts = await DriverShift.find({
     driver: driverId,
 
@@ -173,9 +154,7 @@ async function getDriverWorkedSeconds(
     );
   }
 
-  /**
-   * Include active shift as well.
-   */
+
   const activeShift = await DriverShift.findOne({
     driver: driverId,
     status: "active",
@@ -198,9 +177,7 @@ async function getDriverWorkedSeconds(
 }
 
 
-/**
- * Count orders for one driver.
- */
+
 async function getDriverOrderStats(
   driverId,
   start,
@@ -252,15 +229,6 @@ async function getDriverOrderStats(
 }
 
 
-/**
- * DRIVER
- *
- * Get own statistics.
- *
- * GET /stats/me?period=today
- * GET /stats/me?period=week
- * GET /stats/me?period=month
- */
 export const getMyStats = asyncHandler(
   async (req, res) => {
     if (req.user.role !== "driver") {
@@ -425,11 +393,7 @@ export const getMyDashboardStats = asyncHandler(
 );
 
 
-/**
- * SUPERVISOR
- *
- * Overall supervisor/team dashboard.
- */
+
 export const getSupervisorDashboard =
   asyncHandler(async (req, res) => {
     if (
@@ -531,10 +495,6 @@ export const getSupervisorDashboard =
         }
       }
 
-      /**
-       * Fetch shifts that overlap this
-       * reporting period.
-       */
       const shifts =
         await DriverShift.find({
           supervisor:
@@ -614,10 +574,6 @@ export const getSupervisorDashboard =
         active: activeDrivers,
         inactive: inactiveDrivers,
 
-        /**
-         * Number currently working,
-         * not Socket.IO online status.
-         */
         workingNow:
           activeShifts,
       },
@@ -627,13 +583,7 @@ export const getSupervisorDashboard =
   });
 
 
-/**
- * SUPERVISOR
- *
- * Get one driver's statistics.
- *
- * GET /stats/drivers/:driverId?period=today
- */
+
 export const getDriverStats =
   asyncHandler(async (req, res) => {
     if (
@@ -734,20 +684,7 @@ export const getDriverStats =
   });
 
 
-  /**
- * SUPERVISOR
- *
- * Get statistics for a custom date range.
- *
- * Whole team:
- * GET /stats/supervisor/range?from=2026-09-01&to=2026-09-17
- *
- * One driver:
- * GET /stats/supervisor/range
- *   ?from=2026-09-01
- *   &to=2026-09-17
- *   &driverId=DRIVER_ID
- */
+
 export const getSupervisorRangeStats =
   asyncHandler(async (req, res) => {
     if (
@@ -775,12 +712,7 @@ export const getSupervisorRangeStats =
       to,
     );
 
-    /*
-     * Optional driver filter.
-     *
-     * If driverId exists, verify that
-     * the driver belongs to this supervisor.
-     */
+ 
     let driver = null;
 
     if (driverId) {
@@ -883,12 +815,7 @@ export const getSupervisorRangeStats =
       }
     }
 
-    /*
-     * SHIFT FILTER
-     *
-     * Include shifts that overlap
-     * the requested range.
-     */
+   
     const shiftMatch = {
       supervisor:
         req.user._id,
