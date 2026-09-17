@@ -51,6 +51,51 @@ function getPeriodRange(period) {
   };
 }
 
+function getCustomRange(from, to) {
+  if (!from || !to) {
+    const error = new Error(
+      "from and to dates are required",
+    );
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  const start = DateTime.fromISO(from, {
+    zone: TIME_ZONE,
+  }).startOf("day");
+
+  const end = DateTime.fromISO(to, {
+    zone: TIME_ZONE,
+  }).endOf("day");
+
+  if (!start.isValid || !end.isValid) {
+    const error = new Error(
+      "from and to must be valid ISO dates",
+    );
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  if (end < start) {
+    const error = new Error(
+      "to date cannot be before from date",
+    );
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  return {
+    start: start.toUTC().toJSDate(),
+    end: end.toUTC().toJSDate(),
+  };
+}
+
 
 /**
  * Calculates how many seconds of a shift overlap
@@ -684,6 +729,357 @@ export const getDriverStats =
                 activeShift.startedAt,
             }
           : null,
+      },
+    });
+  });
+
+
+  /**
+ * SUPERVISOR
+ *
+ * Get statistics for a custom date range.
+ *
+ * Whole team:
+ * GET /stats/supervisor/range?from=2026-09-01&to=2026-09-17
+ *
+ * One driver:
+ * GET /stats/supervisor/range
+ *   ?from=2026-09-01
+ *   &to=2026-09-17
+ *   &driverId=DRIVER_ID
+ */
+export const getSupervisorRangeStats =
+  asyncHandler(async (req, res) => {
+    if (
+      req.user.role !==
+      "supervisor"
+    ) {
+      res.status(403);
+
+      throw new Error(
+        "Only supervisors can access this endpoint",
+      );
+    }
+
+    const {
+      from,
+      to,
+      driverId,
+    } = req.query;
+
+    const {
+      start,
+      end,
+    } = getCustomRange(
+      from,
+      to,
+    );
+
+    /*
+     * Optional driver filter.
+     *
+     * If driverId exists, verify that
+     * the driver belongs to this supervisor.
+     */
+    let driver = null;
+
+    if (driverId) {
+      driver =
+        await User.findOne({
+          _id: driverId,
+
+          role: "driver",
+
+          supervisor:
+            req.user._id,
+        }).select(
+          "name iqamaId phone isActive lastLoginAt",
+        );
+
+      if (!driver) {
+        res.status(404);
+
+        throw new Error(
+          "Driver not found",
+        );
+      }
+    }
+
+    /*
+     * ORDER FILTER
+     *
+     * Whole team:
+     * supervisor = logged-in supervisor
+     *
+     * Specific driver:
+     * supervisor = logged-in supervisor
+     * rider = selected driver
+     */
+    const orderMatch = {
+      supervisor:
+        req.user._id,
+
+      createdAt: {
+        $gte: start,
+        $lte: end,
+      },
+    };
+
+    if (driver) {
+      orderMatch.rider =
+        driver._id;
+    }
+
+    const orderStats =
+      await Order.aggregate([
+        {
+          $match: orderMatch,
+        },
+
+        {
+          $group: {
+            _id: "$status",
+
+            count: {
+              $sum: 1,
+            },
+          },
+        },
+      ]);
+
+    let totalOrders = 0;
+    let pickedUp = 0;
+    let delivered = 0;
+    let cancelled = 0;
+
+    for (
+      const item of orderStats
+    ) {
+      totalOrders +=
+        item.count;
+
+      if (
+        item._id ===
+        "picked_up"
+      ) {
+        pickedUp =
+          item.count;
+      }
+
+      if (
+        item._id ===
+        "delivered"
+      ) {
+        delivered =
+          item.count;
+      }
+
+      if (
+        item._id ===
+        "cancelled"
+      ) {
+        cancelled =
+          item.count;
+      }
+    }
+
+    /*
+     * SHIFT FILTER
+     *
+     * Include shifts that overlap
+     * the requested range.
+     */
+    const shiftMatch = {
+      supervisor:
+        req.user._id,
+
+      startedAt: {
+        $lt: end,
+      },
+
+      $or: [
+        {
+          endedAt: {
+            $gt: start,
+          },
+        },
+
+        {
+          status: "active",
+
+          endedAt: null,
+        },
+      ],
+    };
+
+    if (driver) {
+      shiftMatch.driver =
+        driver._id;
+    }
+
+    const shifts =
+      await DriverShift.find(
+        shiftMatch,
+      ).select(
+        "driver startedAt endedAt status",
+      );
+
+    const now = new Date();
+
+    let totalWorkedSeconds = 0;
+
+    for (
+      const shift of shifts
+    ) {
+      const effectiveEnd =
+        shift.status ===
+        "active"
+          ? now
+          : shift.endedAt;
+
+      if (!effectiveEnd) {
+        continue;
+      }
+
+      totalWorkedSeconds +=
+        getShiftOverlapSeconds(
+          shift.startedAt,
+          effectiveEnd,
+          start,
+          end,
+        );
+    }
+
+    /*
+     * Driver summary.
+     *
+     * For team range we can show
+     * total team drivers.
+     *
+     * For selected driver we return
+     * only that driver.
+     */
+    let driverSummary;
+
+    if (driver) {
+      const activeShift =
+        await DriverShift.findOne({
+          driver: driver._id,
+
+          status: "active",
+        }).select(
+          "_id startedAt",
+        );
+
+      driverSummary = {
+        mode: "driver",
+
+        driver,
+
+        workingNow:
+          !!activeShift,
+      };
+    } else {
+      const [
+        totalDrivers,
+        activeDrivers,
+        inactiveDrivers,
+        workingNow,
+      ] = await Promise.all([
+        User.countDocuments({
+          role: "driver",
+
+          supervisor:
+            req.user._id,
+        }),
+
+        User.countDocuments({
+          role: "driver",
+
+          supervisor:
+            req.user._id,
+
+          isActive: true,
+        }),
+
+        User.countDocuments({
+          role: "driver",
+
+          supervisor:
+            req.user._id,
+
+          isActive: false,
+        }),
+
+        DriverShift.countDocuments({
+          supervisor:
+            req.user._id,
+
+          status: "active",
+        }),
+      ]);
+
+      driverSummary = {
+        mode: "team",
+
+        total:
+          totalDrivers,
+
+        active:
+          activeDrivers,
+
+        inactive:
+          inactiveDrivers,
+
+        workingNow,
+      };
+    }
+
+    res.json({
+      success: true,
+
+      timezone:
+        TIME_ZONE,
+
+      range: {
+        from,
+
+        to,
+
+        start,
+
+        end,
+      },
+
+      scope: driver
+        ? "driver"
+        : "team",
+
+      drivers:
+        driverSummary,
+
+      orders: {
+        total:
+          totalOrders,
+
+        pickedUp,
+
+        delivered,
+
+        cancelled,
+      },
+
+      work: {
+        totalSeconds:
+          totalWorkedSeconds,
+
+        totalHours:
+          Number(
+            (
+              totalWorkedSeconds /
+              3600
+            ).toFixed(2),
+          ),
       },
     });
   });

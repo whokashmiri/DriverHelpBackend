@@ -1,3 +1,4 @@
+import { DateTime } from "luxon";
 import { Order } from "../models/Order.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadBufferToCloudinary } from "../utils/uploadToCloudinary.js";
@@ -14,6 +15,25 @@ function parseDate(value, fieldName) {
   }
 
   return date;
+}
+
+function getRiyadhTodayRange() {
+  const now = DateTime.now().setZone("Asia/Riyadh");
+
+  const start = now
+    .startOf("day")
+    .toUTC()
+    .toJSDate();
+
+  const end = now
+    .endOf("day")
+    .toUTC()
+    .toJSDate();
+
+  return {
+    start,
+    end,
+  };
 }
 
 function getFile(
@@ -389,4 +409,56 @@ export const deleteOrder = asyncHandler(
       message: "Order deleted",
     });
   }
+);
+
+
+export const getSupervisorActiveOrders = asyncHandler(
+  async (req, res) => {
+    if (req.user.role !== "supervisor") {
+      res.status(403);
+
+      throw new Error(
+        "Only supervisors can view active driver orders",
+      );
+    }
+
+    const { start, end } = getRiyadhTodayRange();
+
+    const orders = await Order.find({
+      /*
+       * The order belongs to a driver,
+       * but this field identifies which
+       * supervisor owns/manages that driver/order.
+       */
+      supervisor: req.user._id,
+
+      /*
+       * Active order.
+       */
+      status: "picked_up",
+
+      /*
+       * Current Riyadh day only.
+       */
+      createdAt: {
+        $gte: start,
+        $lte: end,
+      },
+    })
+      .sort({
+        pickupTime: -1,
+      })
+      .populate(
+        "rider",
+        "name iqamaId phone isActive",
+      );
+
+    res.json({
+      success: true,
+
+      count: orders.length,
+
+      orders,
+    });
+  },
 );

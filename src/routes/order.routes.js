@@ -7,6 +7,7 @@ import {
   getActiveOrder,
   getMyOrders,
   getOrderById,
+  getSupervisorActiveOrders
 } from "../controllers/order.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -56,6 +57,12 @@ router.get(
 router.delete(
   "/:id",
   deleteOrder,
+);
+
+router.get(
+  "/supervisor/active",
+ 
+  getSupervisorActiveOrders,
 );
 
 export default router;

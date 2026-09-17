@@ -5,6 +5,7 @@ import {
   getMyDashboardStats,
   getMyStats,
   getSupervisorDashboard,
+  getSupervisorRangeStats,
 } from "../controllers/stats.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -24,7 +25,7 @@ router.use(protect);
  */
 router.get(
   "/me",
-  getMyStats
+  getMyStats,
 );
 
 /**
@@ -34,7 +35,7 @@ router.get(
  */
 router.get(
   "/me/dashboard",
-  getMyDashboardStats
+  getMyDashboardStats,
 );
 
 /**
@@ -44,7 +45,30 @@ router.get(
  */
 router.get(
   "/dashboard",
-  getSupervisorDashboard
+  getSupervisorDashboard,
+);
+
+/**
+ * SUPERVISOR
+ *
+ * Custom date-range statistics.
+ *
+ * Whole team:
+ *
+ * GET /stats/range
+ *   ?from=2026-09-01
+ *   &to=2026-09-17
+ *
+ * One driver:
+ *
+ * GET /stats/range
+ *   ?from=2026-09-01
+ *   &to=2026-09-17
+ *   &driverId=DRIVER_ID
+ */
+router.get(
+  "/range",
+  getSupervisorRangeStats,
 );
 
 /**
@@ -60,7 +84,7 @@ router.get(
  */
 router.get(
   "/drivers/:driverId",
-  getDriverStats
+  getDriverStats,
 );
 
 export default router;
