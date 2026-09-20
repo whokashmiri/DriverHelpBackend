@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import { Order } from "../models/Order.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadBufferToCloudinary } from "../utils/uploadToCloudinary.js";
+import {getNextOrderId} from "../services/orderSequence.service.js";
 
 const TIME_ZONE = "Asia/Riyadh";
 
@@ -225,93 +226,144 @@ function normalizeOvernightPickupTime(
  * Step 1:
  * Driver takes pickup photo and creates the order.
  */
-export const createPickupOrder = asyncHandler(async (req, res) => {
-  if (req.user.role !== "driver") {
-    res.status(403);
-    throw new Error("Only drivers can create orders");
-  }
+export const createPickupOrder =
+  asyncHandler(
+    async (req, res) => {
+      if (
+        req.user.role !==
+        "driver"
+      ) {
+        res.status(403);
 
-  if (!req.user.supervisor) {
-    res.status(400);
-    throw new Error("Driver is not assigned to a supervisor");
-  }
+        throw new Error(
+          "Only drivers can create orders"
+        );
+      }
 
-  const pickupFile = getFile(req.files, "pickupPhoto");
+      if (
+        !req.user.supervisor
+      ) {
+        res.status(400);
 
-  const pickupTime = parseDate(
-    req.body.pickupTime,
-    "pickupTime"
+        throw new Error(
+          "Driver is not assigned to a supervisor"
+        );
+      }
+
+      const pickupFile =
+        getFile(
+          req.files,
+          "pickupPhoto"
+        );
+
+      const pickupTime =
+        parseDate(
+          req.body.pickupTime,
+          "pickupTime"
+        );
+
+      const existingOrder =
+        await Order.findOne({
+          rider:
+            req.user._id,
+
+          status:
+            "picked_up",
+        }).select("_id");
+
+      if (existingOrder) {
+        res.status(409);
+
+        throw new Error(
+          "Complete the current order before creating another pickup"
+        );
+      }
+
+      console.log(
+        "[Pickup] file received",
+        {
+          fieldname:
+            pickupFile.fieldname,
+
+          mimetype:
+            pickupFile.mimetype,
+
+          size:
+            pickupFile.size,
+
+          bufferSize:
+            pickupFile.buffer
+              ?.length,
+        }
+      );
+
+      const pickupUpload =
+        await uploadBufferToCloudinary(
+          pickupFile.buffer,
+          "delivery-app/pickup"
+        );
+
+      if (
+        !pickupUpload?.secure_url ||
+        !pickupUpload?.public_id
+      ) {
+        throw new Error(
+          "Pickup image upload failed"
+        );
+      }
+
+      /*
+       * Generate permanent unique order ID.
+       *
+       * Example:
+       * 100001
+       * 100002
+       * 100003
+       */
+      const orderId =
+        await getNextOrderId();
+
+      const order =
+        await Order.create({
+          orderId,
+
+          rider:
+            req.user._id,
+
+          supervisor:
+            req.user.supervisor,
+
+          pickupPhoto: {
+            url:
+              pickupUpload.secure_url,
+
+            publicId:
+              pickupUpload.public_id,
+
+            takenAt:
+              pickupTime,
+          },
+
+          pickupTime,
+
+          status:
+            "picked_up",
+
+          notes:
+            req.body.notes?.trim() ||
+            "",
+        });
+
+      res.status(201).json({
+        success: true,
+
+        message:
+          "Pickup order created",
+
+        order,
+      });
+    }
   );
-
-  const existingOrder =
-  await Order.findOne({
-    rider: req.user._id,
-    status: "picked_up",
-  }).select("_id");
-
-if (existingOrder) {
-  res.status(409);
-
-  throw new Error(
-    "Complete the current order before creating another pickup",
-  );
-}
-
-
-console.log(
-  "[Pickup] file received",
-  {
-    fieldname:
-      pickupFile.fieldname,
-
-    mimetype:
-      pickupFile.mimetype,
-
-    size:
-      pickupFile.size,
-
-    bufferSize:
-      pickupFile.buffer?.length,
-  },
-);
-  const pickupUpload =
-    await uploadBufferToCloudinary(
-      pickupFile.buffer,
-      "delivery-app/pickup"
-    );
-
-    if (
-  !pickupUpload?.secure_url ||
-  !pickupUpload?.public_id
-) {
-  throw new Error(
-    "Pickup image upload failed",
-  );
-}
-  const order = await Order.create({
-    rider: req.user._id,
-
-    supervisor: req.user.supervisor,
-
-    pickupPhoto: {
-      url: pickupUpload.secure_url,
-      publicId: pickupUpload.public_id,
-      takenAt: pickupTime,
-    },
-
-    pickupTime,
-
-    status: "picked_up",
-
-    notes: req.body.notes?.trim() || "",
-  });
-
-  res.status(201).json({
-    success: true,
-    message: "Pickup order created",
-    order,
-  });
-});
 
 /**
  * DRIVER

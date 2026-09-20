@@ -24,6 +24,11 @@ const photoSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
+ orderId: {
+  type: Number,
+  default: null,
+  immutable: true,
+},
     rider: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LogisticsUser",
@@ -137,6 +142,21 @@ orderSchema.index({
   status: 1,
   createdAt: -1,
 });
+
+orderSchema.index(
+  {
+    orderId: 1,
+  },
+  {
+    unique: true,
+
+    partialFilterExpression: {
+      orderId: {
+        $type: "number",
+      },
+    },
+  },
+);
 
 export const Order =
   mongoose.models.Order ||
