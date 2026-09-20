@@ -210,6 +210,7 @@ export async function getDriverOrderStats(
   let total = 0;
   let pickedUp = 0;
   let delivered = 0;
+  let cancelled = 0;
 
   for (const item of result) {
     total += item.count;
@@ -220,6 +221,12 @@ export async function getDriverOrderStats(
       pickedUp =
         item.count;
     }
+    if (
+  item._id === "cancelled"
+) {
+  cancelled =
+    item.count;
+}
 
     if (
       item._id === "delivered"
@@ -233,6 +240,7 @@ export async function getDriverOrderStats(
     total,
     pickedUp,
     delivered,
+     cancelled,
   };
 }
 
@@ -272,6 +280,7 @@ export async function getSupervisorOrderStats(
   let total = 0;
   let pickedUp = 0;
   let delivered = 0;
+  let cancelled = 0;
 
   for (const item of result) {
     total += item.count;
@@ -289,15 +298,22 @@ export async function getSupervisorOrderStats(
       delivered =
         item.count;
     }
+
+    if (
+      item._id === "cancelled"
+    ) {
+      cancelled =
+        item.count;
+    }
   }
 
   return {
     total,
     pickedUp,
     delivered,
+    cancelled,
   };
 }
-
 /**
  * Supervisor/team total working seconds.
  */

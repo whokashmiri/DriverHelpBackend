@@ -859,21 +859,21 @@ export const getSupervisorActiveOrders = asyncHandler(
 
   
 
-    const orders = await Order.find({
+const orders =
+  await Order.find({
+    supervisor:
+      req.user._id,
 
-      supervisor: req.user._id,
-
-
-      status: "picked_up",
-
+    status:
+      "picked_up",
+  })
+    .sort({
+      pickupTime: -1,
     })
-      .sort({
-        pickupTime: -1,
-      })
-      .populate(
-        "rider",
-        "name iqamaId phone isActive",
-      );
+    .populate(
+      "rider",
+      "name iqamaId phone isActive",
+    );;
 
     res.json({
       success: true,

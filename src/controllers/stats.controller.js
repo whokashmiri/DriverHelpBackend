@@ -198,6 +198,7 @@ async function getDriverOrderStats(
     {
       $group: {
         _id: "$status",
+
         count: {
           $sum: 1,
         },
@@ -208,16 +209,33 @@ async function getDriverOrderStats(
   let total = 0;
   let pickedUp = 0;
   let delivered = 0;
+  let cancelled = 0;
 
   for (const item of result) {
     total += item.count;
 
-    if (item._id === "picked_up") {
-      pickedUp = item.count;
+    if (
+      item._id ===
+      "picked_up"
+    ) {
+      pickedUp =
+        item.count;
     }
 
-    if (item._id === "delivered") {
-      delivered = item.count;
+    if (
+      item._id ===
+      "delivered"
+    ) {
+      delivered =
+        item.count;
+    }
+
+    if (
+      item._id ===
+      "cancelled"
+    ) {
+      cancelled =
+        item.count;
     }
   }
 
@@ -225,6 +243,7 @@ async function getDriverOrderStats(
     total,
     pickedUp,
     delivered,
+    cancelled,
   };
 }
 
@@ -478,22 +497,36 @@ export const getSupervisorDashboard =
       let totalOrders = 0;
       let pickedUp = 0;
       let delivered = 0;
+      let cancelled = 0;
 
-      for (const item of orderStats) {
-        totalOrders += item.count;
+    for (const item of orderStats) {
+  totalOrders +=
+    item.count;
 
-        if (
-          item._id === "picked_up"
-        ) {
-          pickedUp = item.count;
-        }
+  if (
+    item._id ===
+    "picked_up"
+  ) {
+    pickedUp =
+      item.count;
+  }
 
-        if (
-          item._id === "delivered"
-        ) {
-          delivered = item.count;
-        }
-      }
+  if (
+    item._id ===
+    "delivered"
+  ) {
+    delivered =
+      item.count;
+  }
+
+  if (
+    item._id ===
+    "cancelled"
+  ) {
+    cancelled =
+      item.count;
+  }
+}
 
       const shifts =
         await DriverShift.find({
@@ -542,26 +575,26 @@ export const getSupervisorDashboard =
             end
           );
       }
+stats[period] = {
+  orders: {
+    total: totalOrders,
+    pickedUp,
+    delivered,
+    cancelled,
+  },
 
-      stats[period] = {
-        orders: {
-          total: totalOrders,
-          pickedUp,
-          delivered,
-        },
+  work: {
+    totalSeconds:
+      totalWorkedSeconds,
 
-        work: {
-          totalSeconds:
-            totalWorkedSeconds,
-
-          totalHours: Number(
-            (
-              totalWorkedSeconds /
-              3600
-            ).toFixed(2)
-          ),
-        },
-      };
+    totalHours: Number(
+      (
+        totalWorkedSeconds /
+        3600
+      ).toFixed(2)
+    ),
+  },
+};
     }
 
     res.json({
