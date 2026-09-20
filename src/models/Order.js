@@ -80,6 +80,42 @@ const orderSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
+    /*
+     * Cancellation information.
+     *
+     * Only populated when:
+     * status === "cancelled"
+     */
+    cancellationReason: {
+      type: String,
+      enum: [
+        "customer_unavailable",
+        "wrong_address",
+        "vehicle_issue",
+        "order_issue",
+        "emergency",
+        "other",
+      ],
+      default: null,
+    },
+
+    cancellationNotes: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 1000,
+    },
+
+    cancellationPhotos: {
+      type: [photoSchema],
+      default: [],
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

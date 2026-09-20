@@ -3,6 +3,17 @@ import { Order } from "../models/Order.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadBufferToCloudinary } from "../utils/uploadToCloudinary.js";
 
+const TIME_ZONE = "Asia/Riyadh";
+
+const CANCELLATION_REASONS = [
+  "customer_unavailable",
+  "wrong_address",
+  "vehicle_issue",
+  "order_issue",
+  "emergency",
+  "other",
+];
+
 function parseDate(value, fieldName) {
   if (!value) return new Date();
 
@@ -18,7 +29,10 @@ function parseDate(value, fieldName) {
 }
 
 function getRiyadhTodayRange() {
-  const now = DateTime.now().setZone("Asia/Riyadh");
+  const now =
+    DateTime.now().setZone(
+      TIME_ZONE
+    );
 
   const start = now
     .startOf("day")
@@ -35,7 +49,6 @@ function getRiyadhTodayRange() {
     end,
   };
 }
-
 function getFile(
   files,
   fieldName,
@@ -83,7 +96,129 @@ function getFile(
   return file;
 }
 
+function getImageFiles(
+  files,
+  fieldName
+) {
+  const imageFiles =
+    files?.[fieldName] ?? [];
 
+  if (!Array.isArray(imageFiles)) {
+    return [];
+  }
+
+  for (const file of imageFiles) {
+    if (
+      !file.buffer ||
+      file.buffer.length === 0
+    ) {
+      const error =
+        new Error(
+          `${fieldName} contains an empty file`
+        );
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    if (
+      !file.mimetype?.startsWith(
+        "image/"
+      )
+    ) {
+      const error =
+        new Error(
+          `${fieldName} must contain images only`
+        );
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+  }
+
+  return imageFiles;
+}
+
+function normalizeOvernightPickupTime(
+  pickupTime,
+  deliveryTime
+) {
+  const pickupRiyadh =
+    DateTime.fromJSDate(
+      new Date(pickupTime),
+      {
+        zone: "utc",
+      }
+    ).setZone(
+      TIME_ZONE
+    );
+
+  const deliveryRiyadh =
+    DateTime.fromJSDate(
+      new Date(deliveryTime),
+      {
+        zone: "utc",
+      }
+    ).setZone(
+      TIME_ZONE
+    );
+
+  /*
+   * Same Riyadh calendar day:
+   * keep the real pickup time.
+   */
+  if (
+    pickupRiyadh.hasSame(
+      deliveryRiyadh,
+      "day"
+    )
+  ) {
+    return new Date(
+      pickupTime
+    );
+  }
+
+  /*
+   * Delivery happened on a later
+   * Riyadh calendar day.
+   *
+   * Normalize pickup to:
+   *
+   * 00:01:00 of the delivery day.
+   */
+  const normalizedPickup =
+    deliveryRiyadh
+      .startOf("day")
+      .set({
+        hour: 0,
+        minute: 1,
+        second: 0,
+        millisecond: 0,
+      });
+
+  /*
+   * Safety for an unusual delivery
+   * occurring before 00:01.
+   *
+   * Never create a pickup time after
+   * the delivery time.
+   */
+  if (
+    normalizedPickup.toMillis() >
+    deliveryRiyadh.toMillis()
+  ) {
+    return deliveryRiyadh
+      .startOf("day")
+      .toUTC()
+      .toJSDate();
+  }
+
+  return normalizedPickup
+    .toUTC()
+    .toJSDate();
+}
 
 /**
  * DRIVER
@@ -290,13 +425,54 @@ export const completeOrderDelivery =
       order.deliveryTime =
         deliveryTime;
 
-      order.durationSeconds =
-        Math.floor(
-          (
-            deliveryTime.getTime() -
-            order.pickupTime.getTime()
-          ) / 1000,
-        );
+     const effectivePickupTime =
+  normalizeOvernightPickupTime(
+    order.pickupTime,
+    deliveryTime
+  );
+
+order.deliveryPhoto = {
+  url:
+    deliveryUpload
+      .secure_url,
+
+  publicId:
+    deliveryUpload
+      .public_id,
+
+  takenAt:
+    deliveryTime,
+};
+
+/*
+ * If pickup and delivery crossed
+ * midnight in Riyadh, this becomes
+ * 00:01 of the delivery day.
+ *
+ * pickupPhoto.takenAt is intentionally
+ * left unchanged as the real photo time.
+ */
+order.pickupTime =
+  effectivePickupTime;
+
+order.deliveryTime =
+  deliveryTime;
+
+order.durationSeconds =
+  Math.max(
+    0,
+    Math.floor(
+      (
+        deliveryTime.getTime() -
+        effectivePickupTime.getTime()
+      ) / 1000
+    )
+  );
+
+order.status =
+  "delivered";
+
+await order.save();
 
       order.status =
         "delivered";
@@ -313,10 +489,217 @@ export const completeOrderDelivery =
       });
     },
   );
-/**
+
+
+
+  /**
  * DRIVER
- * Get driver's own orders.
+ * Cancel current picked-up order.
  */
+export const cancelOrder =
+  asyncHandler(
+    async (req, res) => {
+      if (
+        req.user.role !==
+        "driver"
+      ) {
+        res.status(403);
+
+        throw new Error(
+          "Only drivers can cancel orders"
+        );
+      }
+
+      const cancellationReason =
+        req.body
+          .cancellationReason
+          ?.trim();
+
+      const cancellationNotes =
+        req.body
+          .cancellationNotes
+          ?.trim() || "";
+
+      if (
+        !cancellationReason
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "Cancellation reason is required"
+        );
+      }
+
+      if (
+        !CANCELLATION_REASONS.includes(
+          cancellationReason
+        )
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "Invalid cancellation reason"
+        );
+      }
+
+      /*
+       * If the driver selects "other",
+       * require an explanation.
+       */
+      if (
+        cancellationReason ===
+          "other" &&
+        !cancellationNotes
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "Cancellation notes are required when reason is other"
+        );
+      }
+
+      const order =
+        await Order.findOne({
+          _id:
+            req.params.id,
+
+          rider:
+            req.user._id,
+
+          status:
+            "picked_up",
+        });
+
+      if (!order) {
+        res.status(404);
+
+        throw new Error(
+          "Active order not found"
+        );
+      }
+
+      const cancelledAt =
+        parseDate(
+          req.body.cancelledAt,
+          "cancelledAt"
+        );
+
+      if (
+        cancelledAt.getTime() <
+        order.pickupTime.getTime()
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "cancelledAt cannot be before pickupTime"
+        );
+      }
+
+      const cancellationFiles =
+        getImageFiles(
+          req.files,
+          "cancellationPhotos"
+        );
+
+      /*
+       * Optional safety limit.
+       */
+      if (
+        cancellationFiles.length >
+        5
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "Maximum 5 cancellation photos are allowed"
+        );
+      }
+
+      const cancellationPhotos =
+        [];
+
+      for (
+        const file of
+        cancellationFiles
+      ) {
+        const upload =
+          await uploadBufferToCloudinary(
+            file.buffer,
+            "delivery-app/cancellations"
+          );
+
+        if (
+          !upload?.secure_url ||
+          !upload?.public_id
+        ) {
+          throw new Error(
+            "Cancellation image upload failed"
+          );
+        }
+
+        cancellationPhotos.push({
+          url:
+            upload.secure_url,
+
+          publicId:
+            upload.public_id,
+
+          takenAt:
+            cancelledAt,
+        });
+      }
+
+      order.status =
+        "cancelled";
+
+      order.cancelledAt =
+        cancelledAt;
+
+      order.cancellationReason =
+        cancellationReason;
+
+      order.cancellationNotes =
+        cancellationNotes;
+
+      order.cancellationPhotos =
+        cancellationPhotos;
+
+      /*
+       * Do not set delivery information
+       * for cancelled orders.
+       */
+      order.deliveryTime =
+        null;
+
+      order.deliveryPhoto =
+        null;
+
+      /*
+       * Duration until cancellation.
+       */
+      order.durationSeconds =
+        Math.max(
+          0,
+          Math.floor(
+            (
+              cancelledAt.getTime() -
+              order.pickupTime.getTime()
+            ) / 1000
+          )
+        );
+
+      await order.save();
+
+      res.json({
+        success: true,
+
+        message:
+          "Order cancelled successfully",
+
+        order,
+      });
+    }
+  );
 export const getMyOrders = asyncHandler(
   async (req, res) => {
     const orders = await Order.find({
@@ -422,28 +805,15 @@ export const getSupervisorActiveOrders = asyncHandler(
       );
     }
 
-    const { start, end } = getRiyadhTodayRange();
+  
 
     const orders = await Order.find({
-      /*
-       * The order belongs to a driver,
-       * but this field identifies which
-       * supervisor owns/manages that driver/order.
-       */
+
       supervisor: req.user._id,
 
-      /*
-       * Active order.
-       */
+
       status: "picked_up",
 
-      /*
-       * Current Riyadh day only.
-       */
-      createdAt: {
-        $gte: start,
-        $lte: end,
-      },
     })
       .sort({
         pickupTime: -1,
