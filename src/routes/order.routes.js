@@ -9,6 +9,7 @@ import {
   getMyOrders,
   getOrderById,
   getSupervisorActiveOrders,
+  getSupervisorOrders,
 } from "../controllers/order.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -97,6 +98,12 @@ router.get(
 router.get(
   "/supervisor/active",
   getSupervisorActiveOrders,
+);
+
+
+router.get(
+  "/supervisor/history",
+  getSupervisorOrders,
 );
 
 /**

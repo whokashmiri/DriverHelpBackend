@@ -771,6 +771,220 @@ export const getMyOrders = asyncHandler(
   }
 );
 
+
+export const getSupervisorOrders =
+  asyncHandler(
+    async (req, res) => {
+      if (
+        req.user.role !==
+        "supervisor"
+      ) {
+        res.status(403);
+
+        throw new Error(
+          "Only supervisors can view driver orders",
+        );
+      }
+
+      const page =
+        Math.max(
+          1,
+          Number(req.query.page) ||
+            1,
+        );
+
+      const limit =
+        Math.min(
+          50,
+          Math.max(
+            1,
+            Number(
+              req.query.limit,
+            ) || 10,
+          ),
+        );
+
+      const skip =
+        (page - 1) *
+        limit;
+
+      const {
+        driverId,
+        status,
+        from,
+        to,
+      } = req.query;
+
+      const filter = {
+        supervisor:
+          req.user._id,
+      };
+
+      /*
+       * Filter by specific driver.
+       */
+      if (driverId) {
+        filter.rider =
+          driverId;
+      }
+
+      /*
+       * Filter by order status.
+       */
+      if (
+        status &&
+        [
+          "picked_up",
+          "delivered",
+          "cancelled",
+        ].includes(status)
+      ) {
+        filter.status =
+          status;
+      }
+
+      /*
+       * Date filter.
+       *
+       * Dates are interpreted
+       * in Asia/Riyadh.
+       */
+      if (from || to) {
+        filter.createdAt =
+          {};
+
+        if (from) {
+          const fromDate =
+            DateTime.fromISO(
+              from,
+              {
+                zone:
+                  TIME_ZONE,
+              },
+            )
+              .startOf("day")
+              .toUTC()
+              .toJSDate();
+
+          if (
+            Number.isNaN(
+              fromDate.getTime(),
+            )
+          ) {
+            res.status(400);
+
+            throw new Error(
+              "Invalid from date",
+            );
+          }
+
+          filter.createdAt.$gte =
+            fromDate;
+        }
+
+        if (to) {
+          const toDate =
+            DateTime.fromISO(
+              to,
+              {
+                zone:
+                  TIME_ZONE,
+              },
+            )
+              .endOf("day")
+              .toUTC()
+              .toJSDate();
+
+          if (
+            Number.isNaN(
+              toDate.getTime(),
+            )
+          ) {
+            res.status(400);
+
+            throw new Error(
+              "Invalid to date",
+            );
+          }
+
+          filter.createdAt.$lte =
+            toDate;
+        }
+      }
+
+      const [
+        orders,
+        total,
+      ] =
+        await Promise.all([
+          Order.find(
+            filter,
+          )
+            .sort({
+              createdAt: -1,
+            })
+            .skip(skip)
+            .limit(limit)
+            .populate(
+              "rider",
+              "name iqamaId phone isActive",
+            )
+            .lean(),
+
+          Order.countDocuments(
+            filter,
+          ),
+        ]);
+
+      const totalPages =
+        Math.max(
+          1,
+          Math.ceil(
+            total /
+              limit,
+          ),
+        );
+
+      res.json({
+        success: true,
+
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+
+          hasNextPage:
+            page <
+            totalPages,
+
+          hasPreviousPage:
+            page > 1,
+        },
+
+        filters: {
+          driverId:
+            driverId ||
+            null,
+
+          status:
+            status ||
+            null,
+
+          from:
+            from ||
+            null,
+
+          to:
+            to ||
+            null,
+        },
+
+        orders,
+      });
+    },
+  );
+
 /**
  * DRIVER
  * Get current active order.
