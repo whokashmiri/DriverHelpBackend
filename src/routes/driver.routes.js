@@ -5,6 +5,7 @@ import {
   getDriverById,
   getMyDrivers,
   updateDriverStatus,
+  updateDriver
 } from "../controllers/driver.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -13,40 +14,33 @@ const router = express.Router();
 
 router.use(protect);
 
-/**
- * SUPERVISOR
- * Create driver.
- */
+
 router.post(
   "/",
   createDriver
 );
 
-/**
- * SUPERVISOR
- * Get all drivers belonging to supervisor.
- */
 router.get(
   "/",
   getMyDrivers
 );
 
-/**
- * SUPERVISOR
- * Get one driver.
- */
+
 router.get(
   "/:id",
   getDriverById
 );
 
-/**
- * SUPERVISOR
- * Activate/deactivate driver.
- */
+
 router.patch(
   "/:id/status",
   updateDriverStatus
 );
+
+router.patch(
+  "/:driverId",
+  updateDriver,
+);
+
 
 export default router;

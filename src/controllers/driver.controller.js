@@ -4,6 +4,10 @@ import { User } from "../models/User.js";
 import { DriverShift } from "../models/DriverShift.js";
 
 import { asyncHandler } from "../utils/asyncHandler.js";
+import {
+  updateDriverBySupervisor,
+} from "../services/driver.service.js";
+
 
 
 function getRiyadhDayRange() {
@@ -404,5 +408,67 @@ res.json({
         : "not_started",
   },
 });
+    },
+  );
+
+
+  export const updateDriver =
+  asyncHandler(
+    async (req, res) => {
+      if (
+        req.user.role !==
+        "supervisor"
+      ) {
+        res.status(403);
+
+        throw new Error(
+          "Only supervisors can update drivers",
+        );
+      }
+
+      const {
+        name,
+        iqamaId,
+        phone,
+        password,
+      } = req.body;
+
+      /*
+       * Require at least one
+       * editable field.
+       */
+      if (
+        name === undefined &&
+        iqamaId === undefined &&
+        phone === undefined &&
+        password === undefined
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "No driver fields provided for update",
+        );
+      }
+
+      const driver =
+        await updateDriverBySupervisor(
+          req.user._id,
+          req.params.driverId,
+          {
+            name,
+            iqamaId,
+            phone,
+            password,
+          },
+        );
+
+      res.json({
+        success: true,
+
+        message:
+          "Driver updated successfully",
+
+        driver,
+      });
     },
   );
