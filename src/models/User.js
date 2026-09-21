@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    vehicleType: {
+  type: String,
+  enum: ["car", "bike"],
+  required: false,
+},
 
     password: {
       type: String,

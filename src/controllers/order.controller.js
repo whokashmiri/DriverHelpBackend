@@ -927,7 +927,7 @@ export const getSupervisorOrders =
             .limit(limit)
             .populate(
               "rider",
-              "name iqamaId phone isActive",
+              "name iqamaId phone isActive vehicleType",
             )
             .lean(),
 
@@ -1086,7 +1086,7 @@ const orders =
     })
     .populate(
       "rider",
-      "name iqamaId phone isActive",
+      "name iqamaId phone isActive  vehicleType",
     );;
 
     res.json({

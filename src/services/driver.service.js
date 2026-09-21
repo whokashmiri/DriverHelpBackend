@@ -39,9 +39,12 @@ export async function updateDriverBySupervisor(
     iqamaId,
     phone,
     password,
+    vehicleType,
   } = payload;
 
-  
+  /*
+   * NAME
+   */
   if (
     name !== undefined
   ) {
@@ -58,7 +61,9 @@ export async function updateDriverBySupervisor(
       normalizedName;
   }
 
- 
+  /*
+   * IQAMA
+   */
   if (
     iqamaId !== undefined
   ) {
@@ -71,7 +76,6 @@ export async function updateDriverBySupervisor(
       );
     }
 
-  
     const existingUser =
       await User.findOne({
         iqamaId:
@@ -94,6 +98,7 @@ export async function updateDriverBySupervisor(
       normalizedIqama;
   }
 
+  
   if (
     phone !== undefined
   ) {
@@ -107,7 +112,35 @@ export async function updateDriverBySupervisor(
       null;
   }
 
+ 
+  if (
+    vehicleType !== undefined
+  ) {
+    const normalizedVehicleType =
+      String(
+        vehicleType,
+      )
+        .trim()
+        .toLowerCase();
 
+    if (
+      ![
+        "car",
+        "bike",
+      ].includes(
+        normalizedVehicleType,
+      )
+    ) {
+      throw createServiceError(
+        "Vehicle type must be car or bike",
+      );
+    }
+
+    driver.vehicleType =
+      normalizedVehicleType;
+  }
+
+ 
   if (
     password !== undefined &&
     password !== null &&
@@ -125,13 +158,11 @@ export async function updateDriverBySupervisor(
       );
     }
 
-  
     driver.password =
       normalizedPassword;
   }
 
   await driver.save();
-
 
   const safeDriver =
     driver.toObject();

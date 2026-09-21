@@ -2,23 +2,10 @@ import { DriverLocation } from "../models/DriverLocation.js";
 import { DriverLocationHistory } from "../models/DriverLocationHistory.js";
 import { DriverShift } from "../models/DriverShift.js";
 
-/**
- * How often we persist a location point into history.
- *
- * Current location can update much more frequently,
- * but history does not need every point.
- */
+
 const HISTORY_INTERVAL_MS = 60 * 1000;
 
-/**
- * In-memory history throttle.
- *
- * Key:
- * driverId
- *
- * Value:
- * timestamp of last history insert
- */
+
 const lastHistorySave = new Map();
 
 function validateLocationPayload(data) {
@@ -127,25 +114,7 @@ export function registerLocationSocket(
   io,
   socket
 ) {
-  /**
-   * DRIVER
-   *
-   * Live location update.
-   *
-   * Client:
-   *
-   * socket.emit(
-   *   "driver:location",
-   *   {
-   *     latitude,
-   *     longitude,
-   *     accuracy,
-   *     speed,
-   *     heading
-   *   },
-   *   callback
-   * );
-   */
+
   socket.on(
     "driver:location",
     async (data, callback) => {
@@ -177,26 +146,12 @@ export function registerLocationSocket(
         const recordedAt =
           new Date();
 
-        /**
-         * Find active shift.
-         *
-         * We still update latest location even if
-         * there is no active shift.
-         *
-         * But route history is only saved while
-         * working.
-         */
         const activeShift =
           await DriverShift.findOne({
             driver: user._id,
             status: "active",
           }).select("_id");
 
-        /**
-         * Update latest known location.
-         *
-         * One document per driver.
-         */
         const location =
           await DriverLocation.findOneAndUpdate(
             {
@@ -230,9 +185,6 @@ export function registerLocationSocket(
             }
           );
 
-        /**
-         * Persist route history less frequently.
-         */
         const driverId =
           user._id.toString();
 
@@ -262,10 +214,7 @@ export function registerLocationSocket(
           );
         }
 
-        /**
-         * Send live location ONLY to driver's
-         * supervisor room.
-         */
+ 
         io.to(
           `supervisor:${user.supervisor.toString()}`
         ).emit(
@@ -292,9 +241,7 @@ export function registerLocationSocket(
           }
         );
 
-        /**
-         * Optional acknowledgement to driver.
-         */
+  
         if (
           typeof callback ===
           "function"
@@ -326,10 +273,7 @@ export function registerLocationSocket(
           });
         }
 
-        /**
-         * Also emit an event if the frontend
-         * does not use acknowledgements.
-         */
+    
         socket.emit(
           "driver:location:error",
           {

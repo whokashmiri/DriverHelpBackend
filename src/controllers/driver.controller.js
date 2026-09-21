@@ -60,24 +60,28 @@ function getRiyadhDayRange() {
  */
 export const createDriver = asyncHandler(
   async (req, res) => {
-    const {
-      iqamaId,
-      name,
-      phone,
-      password,
-    } = req.body;
+  const {
+  iqamaId,
+  name,
+  phone,
+  password,
+  vehicleType,
+} = req.body;
 
-    if (
-      !iqamaId ||
-      !name ||
-      !password
-    ) {
-      res.status(400);
+ if (
+  !iqamaId ||
+  !name ||
+  !password ||
+  !vehicleType
+) {
+  res.status(400);
 
-      throw new Error(
-        "Iqama ID, name and password are required",
-      );
-    }
+  throw new Error(
+    "Iqama ID, name, password and vehicle type are required",
+  );
+}
+
+ 
 
     const cleanIqamaId =
       String(iqamaId).trim();
@@ -96,33 +100,35 @@ export const createDriver = asyncHandler(
       );
     }
 
-    const driver =
-      await User.create({
-        iqamaId:
-          cleanIqamaId,
+   const driver =
+  await User.create({
+    iqamaId:
+      cleanIqamaId,
 
-        name: String(
-          name,
-        ).trim(),
+    name: String(
+      name,
+    ).trim(),
 
-        phone: phone
-          ? String(
-              phone,
-            ).trim()
-          : null,
+    phone: phone
+      ? String(
+          phone,
+        ).trim()
+      : null,
 
-        password,
+    password,
 
-        role: "driver",
+    vehicleType,
 
-        supervisor:
-          req.user._id,
+    role: "driver",
 
-        createdBy:
-          req.user._id,
+    supervisor:
+      req.user._id,
 
-        isActive: true,
-      });
+    createdBy:
+      req.user._id,
+
+    isActive: true,
+  });
 
     res.status(201).json({
       success: true,
@@ -130,29 +136,31 @@ export const createDriver = asyncHandler(
       message:
         "Driver created successfully",
 
-      driver: {
-        id: driver._id,
-        _id: driver._id,
+    driver: {
+  id: driver._id,
+  _id: driver._id,
 
-        iqamaId:
-          driver.iqamaId,
+  iqamaId:
+    driver.iqamaId,
 
-        name:
-          driver.name,
+  name:
+    driver.name,
 
-        phone:
-          driver.phone,
+  phone:
+    driver.phone,
 
-        role:
-          driver.role,
+  vehicleType:
+    driver.vehicleType,
 
-        isActive:
-          driver.isActive,
+  role:
+    driver.role,
 
-    
-        workStatus:
-          "not_started",
-      },
+  isActive:
+    driver.isActive,
+
+  workStatus:
+    "not_started",
+},
     });
   },
 );
@@ -170,6 +178,7 @@ export const getMyDrivers = asyncHandler(
           "iqamaId",
           "name",
           "phone",
+          "vehicleType",
           "role",
           "isActive",
           "supervisor",
@@ -280,6 +289,7 @@ export const getDriverById = asyncHandler(
           "iqamaId",
           "name",
           "phone",
+          "vehicleType",
           "role",
           "isActive",
           "supervisor",
@@ -396,6 +406,9 @@ res.json({
     phone:
       driver.phone,
 
+    vehicleType:
+  driver.vehicleType,
+
     role:
       driver.role,
 
@@ -430,25 +443,35 @@ res.json({
         name,
         iqamaId,
         phone,
+        vehicleType,
         password,
       } = req.body;
 
-      /*
-       * Require at least one
-       * editable field.
-       */
-      if (
-        name === undefined &&
-        iqamaId === undefined &&
-        phone === undefined &&
-        password === undefined
-      ) {
-        res.status(400);
+    if (
+  name === undefined &&
+  iqamaId === undefined &&
+  phone === undefined &&
+  password === undefined &&
+  vehicleType === undefined
+) {
+  res.status(400);
 
-        throw new Error(
-          "No driver fields provided for update",
-        );
-      }
+  throw new Error(
+    "No driver fields provided for update",
+  );
+}
+if (
+  vehicleType !== undefined &&
+  !["car", "bike"].includes(
+    vehicleType,
+  )
+) {
+  res.status(400);
+
+  throw new Error(
+    "Vehicle type must be car or bike",
+  );
+}
 
       const driver =
         await updateDriverBySupervisor(
@@ -458,6 +481,7 @@ res.json({
             name,
             iqamaId,
             phone,
+            vehicleType,
             password,
           },
         );
