@@ -5,42 +5,71 @@ import {
   getDriverById,
   getMyDrivers,
   updateDriverStatus,
-  updateDriver
+  updateDriver,
 } from "../controllers/driver.controller.js";
 
-import { protect } from "../middleware/auth.middleware.js";
+import {
+  protect,
+} from "../middleware/auth.middleware.js";
 
-const router = express.Router();
+import {
+  upload,
+} from "../middleware/upload.middleware.js";
+
+const router =
+  express.Router();
 
 router.use(protect);
 
-
+/*
+ * CREATE DRIVER
+ *
+ * Accepts multipart/form-data
+ * profilePicture is optional.
+ */
 router.post(
   "/",
-  createDriver
+  upload.single(
+    "profilePicture",
+  ),
+  createDriver,
 );
 
+/*
+ * GET MY DRIVERS
+ */
 router.get(
   "/",
-  getMyDrivers
+  getMyDrivers,
 );
 
-
+/*
+ * GET DRIVER BY ID
+ */
 router.get(
   "/:id",
-  getDriverById
+  getDriverById,
 );
 
-
+/*
+ * ACTIVATE / DEACTIVATE DRIVER
+ */
 router.patch(
   "/:id/status",
-  updateDriverStatus
+  updateDriverStatus,
 );
 
+/*
+ * UPDATE DRIVER
+ *
+ * Accepts optional profilePicture.
+ */
 router.patch(
   "/:driverId",
+  upload.single(
+    "profilePicture",
+  ),
   updateDriver,
 );
-
 
 export default router;

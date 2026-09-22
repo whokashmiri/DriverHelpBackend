@@ -16,16 +16,38 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    shortName: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 30,
+    },
+
     phone: {
       type: String,
       default: null,
       trim: true,
     },
+
+    profilePicture: {
+      url: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+
+      publicId: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+    },
+
     vehicleType: {
-  type: String,
-  enum: ["car", "bike"],
-  required: false,
-},
+      type: String,
+      enum: ["car", "bike"],
+      required: false,
+    },
 
     password: {
       type: String,
@@ -36,7 +58,11 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["driver", "supervisor", "admin"],
+      enum: [
+        "driver",
+        "supervisor",
+        "admin",
+      ],
       default: "driver",
       required: true,
       index: true,
@@ -68,36 +94,56 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 /**
  * Hash password before save
  */
-userSchema.pre("save", async function hashPassword(next) {
-  if (!this.isModified("password")) {
-    return next();
-  }
+userSchema.pre(
+  "save",
+  async function hashPassword(next) {
+    if (
+      !this.isModified(
+        "password",
+      )
+    ) {
+      return next();
+    }
 
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+    const salt =
+      await bcrypt.genSalt(
+        10,
+      );
 
-  next();
-});
+    this.password =
+      await bcrypt.hash(
+        this.password,
+        salt,
+      );
+
+    next();
+  },
+);
 
 /**
  * Compare login password
  */
-userSchema.methods.matchPassword = async function matchPassword(
-  enteredPassword
-) {
-  return bcrypt.compare(enteredPassword, this.password);
-};
+userSchema.methods.matchPassword =
+  async function matchPassword(
+    enteredPassword,
+  ) {
+    return bcrypt.compare(
+      enteredPassword,
+      this.password,
+    );
+  };
 
 export const User =
-  mongoose.models.LogisticsUser ||
+  mongoose.models
+    .LogisticsUser ||
   mongoose.model(
     "LogisticsUser",
     userSchema,
-    "logisticsusers"
+    "logisticsusers",
   );

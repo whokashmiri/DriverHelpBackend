@@ -36,10 +36,12 @@ export async function updateDriverBySupervisor(
 
   const {
     name,
+    shortName,
     iqamaId,
     phone,
     password,
     vehicleType,
+    profilePicture,
   } = payload;
 
   /*
@@ -59,6 +61,32 @@ export async function updateDriverBySupervisor(
 
     driver.name =
       normalizedName;
+  }
+
+  /*
+   * SHORT NAME
+   */
+  if (
+    shortName !== undefined
+  ) {
+    const normalizedShortName =
+      typeof shortName ===
+      "string"
+        ? shortName.trim()
+        : "";
+
+    if (
+      normalizedShortName.length >
+      30
+    ) {
+      throw createServiceError(
+        "Short name must not exceed 30 characters",
+      );
+    }
+
+    driver.shortName =
+      normalizedShortName ||
+      null;
   }
 
   /*
@@ -98,7 +126,9 @@ export async function updateDriverBySupervisor(
       normalizedIqama;
   }
 
-  
+  /*
+   * PHONE
+   */
   if (
     phone !== undefined
   ) {
@@ -112,39 +142,94 @@ export async function updateDriverBySupervisor(
       null;
   }
 
- 
+  /*
+   * VEHICLE TYPE
+   */
   if (
     vehicleType !== undefined
   ) {
-    const normalizedVehicleType =
+    /*
+     * Allow null/empty value so older
+     * or walking drivers can have no
+     * vehicle type.
+     */
+    if (
+      vehicleType === null ||
       String(
         vehicleType,
-      )
-        .trim()
-        .toLowerCase();
-
-    if (
-      ![
-        "car",
-        "bike",
-      ].includes(
-        normalizedVehicleType,
-      )
+      ).trim() === ""
     ) {
-      throw createServiceError(
-        "Vehicle type must be car or bike",
-      );
-    }
+      driver.vehicleType =
+        undefined;
+    } else {
+      const normalizedVehicleType =
+        String(
+          vehicleType,
+        )
+          .trim()
+          .toLowerCase();
 
-    driver.vehicleType =
-      normalizedVehicleType;
+      if (
+        ![
+          "car",
+          "bike",
+        ].includes(
+          normalizedVehicleType,
+        )
+      ) {
+        throw createServiceError(
+          "Vehicle type must be car or bike",
+        );
+      }
+
+      driver.vehicleType =
+        normalizedVehicleType;
+    }
   }
 
- 
+  /*
+   * PROFILE PICTURE
+   *
+   * Controller should upload the
+   * image first and pass:
+   *
+   * {
+   *   url,
+   *   publicId
+   * }
+   */
+  if (
+    profilePicture !== undefined
+  ) {
+    if (
+      profilePicture === null
+    ) {
+      driver.profilePicture = {
+        url: null,
+        publicId: null,
+      };
+    } else {
+      driver.profilePicture = {
+        url:
+          profilePicture.url ??
+          null,
+
+        publicId:
+          profilePicture.publicId ??
+          null,
+      };
+    }
+  }
+
+  /*
+   * PASSWORD
+   */
   if (
     password !== undefined &&
     password !== null &&
-    String(password).trim() !== ""
+    String(
+      password,
+    ).trim() !== ""
   ) {
     const normalizedPassword =
       String(password);

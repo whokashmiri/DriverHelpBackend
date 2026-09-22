@@ -7,6 +7,9 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import {
   updateDriverBySupervisor,
 } from "../services/driver.service.js";
+import {
+  uploadBufferToCloudinary,
+} from "../utils/uploadToCloudinary.js";
 
 
 
@@ -61,8 +64,9 @@ function getRiyadhDayRange() {
 export const createDriver = asyncHandler(
   async (req, res) => {
   const {
-  iqamaId,
+   iqamaId,
   name,
+  shortName,
   phone,
   password,
   vehicleType,
@@ -100,7 +104,28 @@ export const createDriver = asyncHandler(
       );
     }
 
-   const driver =
+
+    const cleanShortName =
+  shortName
+    ? String(
+        shortName,
+      ).trim()
+    : null;
+
+if (
+  cleanShortName &&
+  cleanShortName.length >
+    30
+) {
+  res.status(400);
+
+  throw new Error(
+    "Short name must not exceed 30 characters",
+  );
+}
+
+
+const driver =
   await User.create({
     iqamaId:
       cleanIqamaId,
@@ -109,11 +134,28 @@ export const createDriver = asyncHandler(
       name,
     ).trim(),
 
+    shortName:
+      cleanShortName,
+
     phone: phone
       ? String(
           phone,
         ).trim()
       : null,
+
+    profilePicture:
+      uploadedProfilePicture
+        ? {
+            url:
+              uploadedProfilePicture.url,
+
+            publicId:
+              uploadedProfilePicture.publicId,
+          }
+        : {
+            url: null,
+            publicId: null,
+          },
 
     password,
 
@@ -136,9 +178,12 @@ export const createDriver = asyncHandler(
       message:
         "Driver created successfully",
 
-    driver: {
-  id: driver._id,
-  _id: driver._id,
+driver: {
+  id:
+    driver._id,
+
+  _id:
+    driver._id,
 
   iqamaId:
     driver.iqamaId,
@@ -146,8 +191,14 @@ export const createDriver = asyncHandler(
   name:
     driver.name,
 
+  shortName:
+    driver.shortName,
+
   phone:
     driver.phone,
+
+  profilePicture:
+    driver.profilePicture,
 
   vehicleType:
     driver.vehicleType,
@@ -177,7 +228,9 @@ export const getMyDrivers = asyncHandler(
           "_id",
           "iqamaId",
           "name",
+          "shortName",
           "phone",
+          "profilePicture",
           "vehicleType",
           "role",
           "isActive",
@@ -288,7 +341,9 @@ export const getDriverById = asyncHandler(
           "_id",
           "iqamaId",
           "name",
+          "shortName",
           "phone",
+          "profilePicture",
           "vehicleType",
           "role",
           "isActive",
@@ -405,6 +460,11 @@ res.json({
 
     phone:
       driver.phone,
+    shortName:
+  driver.shortName,
+
+profilePicture:
+  driver.profilePicture,
 
     vehicleType:
   driver.vehicleType,
@@ -443,16 +503,19 @@ res.json({
         name,
         iqamaId,
         phone,
+        shortName,
         vehicleType,
         password,
       } = req.body;
 
-    if (
+if (
   name === undefined &&
+  shortName === undefined &&
   iqamaId === undefined &&
   phone === undefined &&
   password === undefined &&
-  vehicleType === undefined
+  vehicleType === undefined &&
+  !req.file
 ) {
   res.status(400);
 
@@ -472,20 +535,39 @@ if (
     "Vehicle type must be car or bike",
   );
 }
+let profilePicture;
 
-      const driver =
-        await updateDriverBySupervisor(
-          req.user._id,
-          req.params.driverId,
-          {
-            name,
-            iqamaId,
-            phone,
-            vehicleType,
-            password,
-          },
-        );
+if (req.file) {
+  const uploaded =
+    await uploadBufferToCloudinary(
+      req.file.buffer,
+      "driver_profiles",
+    );
 
+  profilePicture = {
+    url:
+      uploaded.secure_url ??
+      uploaded.url,
+
+    publicId:
+      uploaded.public_id,
+  };
+}
+
+    const driver =
+  await updateDriverBySupervisor(
+    req.user._id,
+    req.params.driverId,
+    {
+      name,
+      shortName,
+      iqamaId,
+      phone,
+      vehicleType,
+      password,
+      profilePicture,
+    },
+  );
       res.json({
         success: true,
 
@@ -496,3 +578,5 @@ if (
       });
     },
   );
+
+  
