@@ -250,9 +250,17 @@ export const getMyDriversLocations = asyncHandler(
       supervisor: req.user._id,
     })
       .populate(
-        "driver",
-        "name iqamaId phone isActive"
-      )
+  "driver",
+  [
+    "_id",
+    "name",
+    "shortName",
+    "phone",
+    "profilePicture",
+    "vehicleType",
+    "isActive",
+  ].join(" "),
+)
       .sort({
         recordedAt: -1,
       });
