@@ -7,60 +7,116 @@ export const register = asyncHandler(async (req, res) => {
     iqamaId,
     password,
     name,
+    role,
   } = req.body;
 
-  if (!iqamaId || !password || !name) {
+  if (!iqamaId || !password || !name || !role) {
     res.status(400);
-    throw new Error("Name, Iqama ID and password are required");
+    throw new Error(
+      "Name, Iqama ID, password and role are required",
+    );
   }
 
-  const cleanIqamaId = String(iqamaId).trim();
-  const cleanName = String(name).trim();
+  const cleanIqamaId =
+    String(iqamaId).trim();
+
+  const cleanName =
+    String(name).trim();
+
+  const cleanRole =
+    String(role)
+      .trim()
+      .toLowerCase();
 
   if (!cleanIqamaId) {
     res.status(400);
-    throw new Error("Iqama ID is required");
+    throw new Error(
+      "Iqama ID is required",
+    );
   }
 
   if (!cleanName) {
     res.status(400);
-    throw new Error("Name is required");
+    throw new Error(
+      "Name is required",
+    );
   }
 
   if (password.length < 6) {
     res.status(400);
-    throw new Error("Password must be at least 6 characters");
+    throw new Error(
+      "Password must be at least 6 characters",
+    );
   }
 
-  const existingUser = await User.findOne({
-    iqamaId: cleanIqamaId,
-  });
+  /*
+   * Web registration is only
+   * for management accounts.
+   */
+  if (
+    ![
+      "admin",
+      "supervisor",
+    ].includes(cleanRole)
+  ) {
+    res.status(400);
+
+    throw new Error(
+      "Role must be admin or supervisor",
+    );
+  }
+
+  const existingUser =
+    await User.findOne({
+      iqamaId:
+        cleanIqamaId,
+    });
 
   if (existingUser) {
     res.status(409);
-    throw new Error("Iqama ID already registered");
+
+    throw new Error(
+      "Iqama ID already registered",
+    );
   }
 
-  const user = await User.create({
-    iqamaId: cleanIqamaId,
-    name: cleanName,
-    password,
+  const user =
+    await User.create({
+      iqamaId:
+        cleanIqamaId,
 
-    
-    role: "driver",
-  });
+      name:
+        cleanName,
+
+      password,
+
+      role:
+        cleanRole,
+    });
 
   res.status(201).json({
     success: true,
 
-    token: generateToken(user._id),
+    token:
+      generateToken(
+        user._id,
+      ),
 
     user: {
-      id: user._id,
-      iqamaId: user.iqamaId,
-      name: user.name,
-      role: user.role,
-      isActive: user.isActive,
+      id:
+        user._id,
+
+      iqamaId:
+        user.iqamaId,
+
+      name:
+        user.name,
+
+      role:
+        user.role,
+
+      isActive:
+        user.isActive,
     },
   });
 });
