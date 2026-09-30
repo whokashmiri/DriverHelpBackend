@@ -9,6 +9,19 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const TIME_ZONE = "Asia/Riyadh";
 
+function canPerformDriverWork(
+  user,
+) {
+  return (
+    user?.canDeliverOrders === true &&
+    (
+      user?.role ===
+        "driver" ||
+      user?.role ===
+        "supervisor"
+    )
+  );
+}
 
 function getPeriodRange(period) {
   const now = DateTime.now().setZone(TIME_ZONE);
@@ -250,10 +263,12 @@ async function getDriverOrderStats(
 
 export const getMyStats = asyncHandler(
   async (req, res) => {
-    if (req.user.role !== "driver") {
+    if ( !canPerformDriverWork(
+    req.user,
+  )) {
       res.status(403);
       throw new Error(
-        "Only drivers can access this endpoint"
+        "This user is not allowed to access delivery statistics",
       );
     }
 
@@ -331,7 +346,9 @@ export const getMyStats = asyncHandler(
  */
 export const getMyDashboardStats = asyncHandler(
   async (req, res) => {
-    if (req.user.role !== "driver") {
+    if ( !canPerformDriverWork(
+    req.user,
+  )) {
       res.status(403);
       throw new Error(
         "Only drivers can access this endpoint"
@@ -412,46 +429,77 @@ export const getMyDashboardStats = asyncHandler(
 );
 
 
-
 export const getSupervisorDashboard =
   asyncHandler(async (req, res) => {
     if (
-      req.user.role !== "supervisor"
+      req.user.role !==
+      "supervisor"
     ) {
       res.status(403);
+
       throw new Error(
-        "Only supervisors can access this endpoint"
+        "Only supervisors can access this endpoint",
       );
     }
 
-    const [
-      totalDrivers,
-      activeDrivers,
-      inactiveDrivers,
-      activeShifts,
-    ] = await Promise.all([
-      User.countDocuments({
+    /*
+     * Load actual managed drivers only.
+     *
+     * Supervisor's own driver-mode shift
+     * must NOT increase driver counts.
+     */
+    const managedDrivers =
+      await User.find({
         role: "driver",
-        supervisor: req.user._id,
-      }),
 
-      User.countDocuments({
-        role: "driver",
-        supervisor: req.user._id,
-        isActive: true,
-      }),
+        supervisor:
+          req.user._id,
+      })
+        .select(
+          "_id isActive",
+        )
+        .lean();
 
-      User.countDocuments({
-        role: "driver",
-        supervisor: req.user._id,
-        isActive: false,
-      }),
+    const managedDriverIds =
+      managedDrivers.map(
+        (driver) =>
+          driver._id,
+      );
 
-      DriverShift.countDocuments({
-        supervisor: req.user._id,
-        status: "active",
-      }),
-    ]);
+    const totalDrivers =
+      managedDrivers.length;
+
+    const activeDrivers =
+      managedDrivers.filter(
+        (driver) =>
+          driver.isActive ===
+          true,
+      ).length;
+
+    const inactiveDrivers =
+      totalDrivers -
+      activeDrivers;
+
+    /*
+     * Working-now count should include
+     * only actual managed drivers.
+     *
+     * Supervisor's own driver-mode
+     * shift is intentionally excluded
+     * from this count.
+     */
+    const activeShifts =
+      managedDriverIds.length > 0
+        ? await DriverShift.countDocuments({
+            driver: {
+              $in:
+                managedDriverIds,
+            },
+
+            status:
+              "active",
+          })
+        : 0;
 
     const periods = [
       "today",
@@ -461,14 +509,28 @@ export const getSupervisorDashboard =
 
     const stats = {};
 
-    for (const period of periods) {
+    for (
+      const period of
+      periods
+    ) {
       const {
         start,
         end,
-      } = getPeriodRange(period);
+      } =
+        getPeriodRange(
+          period,
+        );
 
-      /**
-       * Order statistics for supervisor.
+      /*
+       * Team order statistics.
+       *
+       * This includes:
+       * - orders from managed drivers
+       * - supervisor's own orders when
+       *   using driver mode
+       *
+       * because both use:
+       * supervisor = req.user._id
        */
       const orderStats =
         await Order.aggregate([
@@ -478,15 +540,20 @@ export const getSupervisorDashboard =
                 req.user._id,
 
               createdAt: {
-                $gte: start,
-                $lte: end,
+                $gte:
+                  start,
+
+                $lte:
+                  end,
               },
             },
           },
 
           {
             $group: {
-              _id: "$status",
+              _id:
+                "$status",
+
               count: {
                 $sum: 1,
               },
@@ -495,75 +562,105 @@ export const getSupervisorDashboard =
         ]);
 
       let totalOrders = 0;
+
       let pickedUp = 0;
+
       let delivered = 0;
+
       let cancelled = 0;
 
-    for (const item of orderStats) {
-  totalOrders +=
-    item.count;
+      for (
+        const item of
+        orderStats
+      ) {
+        totalOrders +=
+          item.count;
 
-  if (
-    item._id ===
-    "picked_up"
-  ) {
-    pickedUp =
-      item.count;
-  }
+        if (
+          item._id ===
+          "picked_up"
+        ) {
+          pickedUp =
+            item.count;
+        }
 
-  if (
-    item._id ===
-    "delivered"
-  ) {
-    delivered =
-      item.count;
-  }
+        if (
+          item._id ===
+          "delivered"
+        ) {
+          delivered =
+            item.count;
+        }
 
-  if (
-    item._id ===
-    "cancelled"
-  ) {
-    cancelled =
-      item.count;
-  }
-}
+        if (
+          item._id ===
+          "cancelled"
+        ) {
+          cancelled =
+            item.count;
+        }
+      }
 
+      /*
+       * Team work statistics.
+       *
+       * This intentionally includes:
+       * - managed drivers
+       * - supervisor's own driver-mode
+       *   shifts
+       *
+       * because both have:
+       * supervisor = req.user._id
+       */
       const shifts =
         await DriverShift.find({
           supervisor:
             req.user._id,
 
           startedAt: {
-            $lt: end,
+            $lt:
+              end,
           },
 
           $or: [
             {
               endedAt: {
-                $gt: start,
+                $gt:
+                  start,
               },
             },
 
             {
-              status: "active",
-              endedAt: null,
+              status:
+                "active",
+
+              endedAt:
+                null,
             },
           ],
         }).select(
-          "startedAt endedAt status"
+          "startedAt endedAt status",
         );
 
-      const now = new Date();
+      const now =
+        new Date();
 
-      let totalWorkedSeconds = 0;
+      let totalWorkedSeconds =
+        0;
 
-      for (const shift of shifts) {
+      for (
+        const shift of
+        shifts
+      ) {
         const effectiveEnd =
-          shift.status === "active"
+          shift.status ===
+          "active"
             ? now
             : shift.endedAt;
 
-        if (!effectiveEnd) {
+        if (
+          !effectiveEnd
+        ) {
           continue;
         }
 
@@ -572,40 +669,54 @@ export const getSupervisorDashboard =
             shift.startedAt,
             effectiveEnd,
             start,
-            end
+            end,
           );
       }
-stats[period] = {
-  orders: {
-    total: totalOrders,
-    pickedUp,
-    delivered,
-    cancelled,
-  },
 
-  work: {
-    totalSeconds:
-      totalWorkedSeconds,
+      stats[period] = {
+        orders: {
+          total:
+            totalOrders,
 
-    totalHours: Number(
-      (
-        totalWorkedSeconds /
-        3600
-      ).toFixed(2)
-    ),
-  },
-};
+          pickedUp,
+
+          delivered,
+
+          cancelled,
+        },
+
+        work: {
+          totalSeconds:
+            totalWorkedSeconds,
+
+          totalHours:
+            Number(
+              (
+                totalWorkedSeconds /
+                3600
+              ).toFixed(
+                2,
+              ),
+            ),
+        },
+      };
     }
 
     res.json({
       success: true,
 
-      timezone: TIME_ZONE,
+      timezone:
+        TIME_ZONE,
 
       drivers: {
-        total: totalDrivers,
-        active: activeDrivers,
-        inactive: inactiveDrivers,
+        total:
+          totalDrivers,
+
+        active:
+          activeDrivers,
+
+        inactive:
+          inactiveDrivers,
 
         workingNow:
           activeShifts,
@@ -614,8 +725,6 @@ stats[period] = {
       stats,
     });
   });
-
-
 
 export const getDriverStats =
   asyncHandler(async (req, res) => {
@@ -939,61 +1048,69 @@ export const getSupervisorRangeStats =
         workingNow:
           !!activeShift,
       };
-    } else {
-      const [
-        totalDrivers,
-        activeDrivers,
-        inactiveDrivers,
-        workingNow,
-      ] = await Promise.all([
-        User.countDocuments({
-          role: "driver",
+ } else {
+  const managedDrivers =
+    await User.find({
+      role:
+        "driver",
 
-          supervisor:
-            req.user._id,
-        }),
+      supervisor:
+        req.user._id,
+    })
+      .select(
+        "_id isActive",
+      )
+      .lean();
 
-        User.countDocuments({
-          role: "driver",
+  const managedDriverIds =
+    managedDrivers.map(
+      (driver) =>
+        driver._id,
+    );
 
-          supervisor:
-            req.user._id,
+  const totalDrivers =
+    managedDrivers.length;
 
-          isActive: true,
-        }),
+  const activeDrivers =
+    managedDrivers.filter(
+      (driver) =>
+        driver.isActive ===
+        true,
+    ).length;
 
-        User.countDocuments({
-          role: "driver",
+  const inactiveDrivers =
+    totalDrivers -
+    activeDrivers;
 
-          supervisor:
-            req.user._id,
+  const workingNow =
+    managedDriverIds.length > 0
+      ? await DriverShift.countDocuments({
+          driver: {
+            $in:
+              managedDriverIds,
+          },
 
-          isActive: false,
-        }),
+          status:
+            "active",
+        })
+      : 0;
 
-        DriverShift.countDocuments({
-          supervisor:
-            req.user._id,
+  driverSummary = {
+    mode:
+      "team",
 
-          status: "active",
-        }),
-      ]);
+    total:
+      totalDrivers,
 
-      driverSummary = {
-        mode: "team",
+    active:
+      activeDrivers,
 
-        total:
-          totalDrivers,
+    inactive:
+      inactiveDrivers,
 
-        active:
-          activeDrivers,
-
-        inactive:
-          inactiveDrivers,
-
-        workingNow,
-      };
-    }
+    workingNow,
+  };
+}
 
     res.json({
       success: true,
