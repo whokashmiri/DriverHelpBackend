@@ -50,13 +50,13 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use((req, res, next) => {
-  console.log("[HTTP]", {
-    method: req.method,
-    url: req.originalUrl,
-    contentType: req.headers["content-type"],
-    contentLength: req.headers["content-length"],
-    authorization: Boolean(req.headers.authorization),
-  });
+  // console.log("[HTTP]", {
+  //   method: req.method,
+  //   url: req.originalUrl,
+  //   contentType: req.headers["content-type"],
+  //   contentLength: req.headers["content-length"],
+  //   authorization: Boolean(req.headers.authorization),
+  // });
 
   next();
 });

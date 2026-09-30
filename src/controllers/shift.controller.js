@@ -199,19 +199,92 @@ export const endShift = asyncHandler(
  *
  * Useful when app is reopened/restarted.
  */
-export const getActiveShift = asyncHandler(async (req, res) => {
-  const shift = await DriverShift.findOne({
-    driver: req.user._id,
-    status: "active",
-  }).sort({
-    startedAt: -1,
-  });
+export const getActiveShift =
+  asyncHandler(
+    async (req, res) => {
+      // console.log(
+      //   "[Shift][Active] Looking up:",
+      //   {
+      //     userId:
+      //       req.user._id.toString(),
 
-  res.json({
-    success: true,
-    shift,
-  });
-});
+      //     role:
+      //       req.user.role,
+
+      //     canDeliverOrders:
+      //       req.user.canDeliverOrders,
+      //   },
+      // );
+
+      const allUserShifts =
+        await DriverShift.find({
+          driver:
+            req.user._id,
+        })
+          .sort({
+            startedAt: -1,
+          })
+          .limit(5)
+          .select(
+            "_id driver supervisor status startedAt endedAt",
+          )
+          .lean();
+
+      // console.log(
+      //   "[Shift][Active] Recent shifts:",
+      //   allUserShifts.map(
+      //     (shift) => ({
+      //       id:
+      //         shift._id.toString(),
+
+      //       driver:
+      //         shift.driver?.toString(),
+
+      //       supervisor:
+      //         shift.supervisor?.toString(),
+
+      //       status:
+      //         shift.status,
+
+      //       startedAt:
+      //         shift.startedAt,
+
+      //       endedAt:
+      //         shift.endedAt,
+      //     }),
+      //   ),
+      // );
+
+      const shift =
+        await DriverShift.findOne({
+          driver:
+            req.user._id,
+
+          status:
+            "active",
+        }).sort({
+          startedAt: -1,
+        });
+
+      // console.log(
+      //   "[Shift][Active] Result:",
+      //   {
+      //     shiftId:
+      //       shift?._id?.toString() ??
+      //       null,
+
+      //     status:
+      //       shift?.status ??
+      //       null,
+      //   },
+      // );
+
+      res.json({
+        success: true,
+        shift,
+      });
+    },
+  );
 
 
 /**

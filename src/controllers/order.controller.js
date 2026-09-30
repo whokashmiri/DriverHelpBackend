@@ -2,8 +2,8 @@ import { DateTime } from "luxon";
 import { Order } from "../models/Order.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadBufferToCloudinary } from "../utils/uploadToCloudinary.js";
-import {getNextOrderId} from "../services/orderSequence.service.js";
-
+import { getNextOrderId } from "../services/orderSequence.service.js";
+import { User } from "../models/User.js";
 const TIME_ZONE = "Asia/Riyadh";
 
 
@@ -332,23 +332,23 @@ if (!supervisorId) {
         );
       }
 
-      console.log(
-        "[Pickup] file received",
-        {
-          fieldname:
-            pickupFile.fieldname,
+      // console.log(
+      //   "[Pickup] file received",
+      //   {
+      //     fieldname:
+      //       pickupFile.fieldname,
 
-          mimetype:
-            pickupFile.mimetype,
+      //     mimetype:
+      //       pickupFile.mimetype,
 
-          size:
-            pickupFile.size,
+      //     size:
+      //       pickupFile.size,
 
-          bufferSize:
-            pickupFile.buffer
-              ?.length,
-        }
-      );
+      //     bufferSize:
+      //       pickupFile.buffer
+      //         ?.length,
+      //   }
+      // );
 
       const pickupUpload =
         await uploadBufferToCloudinary(
@@ -480,23 +480,23 @@ export const completeOrderDelivery =
         );
       }
 
-      console.log(
-        "[Delivery] file received",
-        {
-          fieldname:
-            deliveryFile.fieldname,
+      // console.log(
+      //   "[Delivery] file received",
+      //   {
+      //     fieldname:
+      //       deliveryFile.fieldname,
 
-          mimetype:
-            deliveryFile.mimetype,
+      //     mimetype:
+      //       deliveryFile.mimetype,
 
-          size:
-            deliveryFile.size,
+      //     size:
+      //       deliveryFile.size,
 
-          bufferSize:
-            deliveryFile.buffer
-              ?.length,
-        },
-      );
+      //     bufferSize:
+      //       deliveryFile.buffer
+      //         ?.length,
+      //   },
+      // );
 
       const deliveryUpload =
         await uploadBufferToCloudinary(
@@ -841,8 +841,9 @@ export const getSupervisorOrders =
       const page =
         Math.max(
           1,
-          Number(req.query.page) ||
-            1,
+          Number(
+            req.query.page,
+          ) || 1,
         );
 
       const limit =
@@ -873,15 +874,67 @@ export const getSupervisorOrders =
       };
 
       /*
-       * Filter by specific driver.
+       * DRIVER FILTER
+       *
+       * Allow:
+       * 1. Managed driver
+       * 2. Supervisor themselves
+       *    when canDeliverOrders === true
        */
       if (driverId) {
-        filter.rider =
-          driverId;
+        const requestedDriverId =
+          String(driverId);
+
+        const supervisorId =
+          req.user._id.toString();
+
+        const isSupervisorSelf =
+          requestedDriverId ===
+          supervisorId;
+
+        if (isSupervisorSelf) {
+          if (
+            req.user
+              .canDeliverOrders !==
+            true
+          ) {
+            res.status(403);
+
+            throw new Error(
+              "Supervisor is not allowed to perform driver work",
+            );
+          }
+
+          filter.rider =
+            req.user._id;
+        } else {
+          const managedDriver =
+            await User.findOne({
+              _id:
+                requestedDriverId,
+
+              role:
+                "driver",
+
+              supervisor:
+                req.user._id,
+            }).select("_id");
+
+          if (!managedDriver) {
+            res.status(404);
+
+            throw new Error(
+              "Driver not found",
+            );
+          }
+
+          filter.rider =
+            managedDriver._id;
+        }
       }
 
       /*
-       * Filter by order status.
+       * STATUS FILTER
        */
       if (
         status &&
@@ -896,9 +949,9 @@ export const getSupervisorOrders =
       }
 
       /*
-       * Date filter.
+       * DATE FILTER
        *
-       * Dates are interpreted
+       * Dates interpreted
        * in Asia/Riyadh.
        */
       if (from || to) {
@@ -914,7 +967,9 @@ export const getSupervisorOrders =
                   TIME_ZONE,
               },
             )
-              .startOf("day")
+              .startOf(
+                "day",
+              )
               .toUTC()
               .toJSDate();
 
@@ -943,7 +998,9 @@ export const getSupervisorOrders =
                   TIME_ZONE,
               },
             )
-              .endOf("day")
+              .endOf(
+                "day",
+              )
               .toUTC()
               .toJSDate();
 
@@ -979,7 +1036,7 @@ export const getSupervisorOrders =
             .limit(limit)
             .populate(
               "rider",
-              "name iqamaId phone isActive vehicleType",
+              "name iqamaId phone isActive vehicleType role canDeliverOrders",
             )
             .lean(),
 
@@ -998,7 +1055,8 @@ export const getSupervisorOrders =
         );
 
       res.json({
-        success: true,
+        success:
+          true,
 
         pagination: {
           page,
@@ -1011,7 +1069,8 @@ export const getSupervisorOrders =
             totalPages,
 
           hasPreviousPage:
-            page > 1,
+            page >
+            1,
         },
 
         filters: {

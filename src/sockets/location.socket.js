@@ -508,26 +508,26 @@ export function registerLocationSocket(
         const user =
           socket.user;
 
-        console.log(
-          "[Socket][Location] Received from driver:",
-          {
-            socketId:
-              socket.id,
+        // console.log(
+        //   "[Socket][Location] Received from driver:",
+        //   {
+        //     socketId:
+        //       socket.id,
 
-            driverId:
-              user?._id?.toString(),
+        //     driverId:
+        //       user?._id?.toString(),
 
-            supervisorId:
-              user?.supervisor?.toString() ??
-              null,
+        //     supervisorId:
+        //       user?.supervisor?.toString() ??
+        //       null,
 
-            rawPayload:
-              data,
+        //     rawPayload:
+        //       data,
 
-            receivedAt:
-              new Date().toISOString(),
-          },
-        );
+        //     receivedAt:
+        //       new Date().toISOString(),
+        //   },
+        // );
 
         if (
            !canPerformDriverWork(
@@ -561,23 +561,23 @@ if (!supervisorObjectId) {
             data,
           );
 
-        console.log(
-          "[Socket][Location] Validated location:",
-          {
-            driverId:
-              user._id.toString(),
+        // console.log(
+        //   "[Socket][Location] Validated location:",
+        //   {
+        //     driverId:
+        //       user._id.toString(),
 
-            latitude,
+        //     latitude,
 
-            longitude,
+        //     longitude,
 
-            accuracy,
+        //     accuracy,
 
-            speed,
+        //     speed,
 
-            heading,
-          },
-        );
+        //     heading,
+        //   },
+        // );
 
         const recordedAt =
           new Date();
@@ -607,21 +607,21 @@ if (!supervisorObjectId) {
         const supervisorId =
           supervisorObjectId.toString();
 
-        console.log(
-          "[Socket][Location] Shift resolved:",
-          {
-            driverId,
+        // console.log(
+        //   "[Socket][Location] Shift resolved:",
+        //   {
+        //     driverId,
 
-            shiftId:
-              activeShift?._id?.toString() ??
-              null,
+        //     shiftId:
+        //       activeShift?._id?.toString() ??
+        //       null,
 
-            isWorking:
-              Boolean(
-                activeShift,
-              ),
-          },
-        );
+        //     isWorking:
+        //       Boolean(
+        //         activeShift,
+        //       ),
+        //   },
+        // );
 
         /*
          * LIVE PAYLOAD
@@ -652,19 +652,19 @@ if (!supervisorObjectId) {
             ),
         };
 
-        console.log(
-          "[Socket][Location] Sending to supervisor:",
-          {
-            room:
-              `supervisor:${supervisorId}`,
+        // console.log(
+        //   "[Socket][Location] Sending to supervisor:",
+        //   {
+        //     room:
+        //       `supervisor:${supervisorId}`,
 
-            event:
-              "driver:location:update",
+        //     event:
+        //       "driver:location:update",
 
-            payload:
-              livePayload,
-          },
-        );
+        //     payload:
+        //       livePayload,
+        //   },
+        // );
 
         /*
          * 1. SEND TO SUPERVISOR
@@ -677,21 +677,21 @@ if (!supervisorObjectId) {
           livePayload,
         );
 
-        console.log(
-          "[Socket][Location] Emitted to supervisor successfully:",
-          {
-            supervisorId,
+        // console.log(
+        //   "[Socket][Location] Emitted to supervisor successfully:",
+        //   {
+        //     supervisorId,
 
-            driverId,
+        //     driverId,
 
-            latitude,
+        //     latitude,
 
-            longitude,
+        //     longitude,
 
-            recordedAt:
-              livePayload.recordedAt,
-          },
-        );
+        //     recordedAt:
+        //       livePayload.recordedAt,
+        //   },
+        // );
 
         /*
          * 2. ACK DRIVER
@@ -708,14 +708,14 @@ if (!supervisorObjectId) {
               livePayload.recordedAt,
           };
 
-          console.log(
-            "[Socket][Location] Sending ACK to driver:",
-            {
-              driverId,
+          // console.log(
+          //   "[Socket][Location] Sending ACK to driver:",
+          //   {
+          //     driverId,
 
-              acknowledgement,
-            },
-          );
+          //     acknowledgement,
+          //   },
+          // );
 
           callback(
             acknowledgement,
@@ -745,24 +745,24 @@ if (!supervisorObjectId) {
               recordedAt,
             });
 
-          console.log(
-            "[Socket][Location] Persistence complete:",
-            {
-              driverId,
+          // console.log(
+          //   "[Socket][Location] Persistence complete:",
+          //   {
+          //     driverId,
 
-              locationId:
-                savedLocation?._id?.toString() ??
-                null,
+          //     locationId:
+          //       savedLocation?._id?.toString() ??
+          //       null,
 
-              historyEligible:
-                Boolean(
-                  activeShift,
-                ),
+          //     historyEligible:
+          //       Boolean(
+          //         activeShift,
+          //       ),
 
-              recordedAt:
-                recordedAt.toISOString(),
-            },
-          );
+          //     recordedAt:
+          //       recordedAt.toISOString(),
+          //   },
+          // );
         } catch (
           persistenceError
         ) {

@@ -854,28 +854,84 @@ export const getSupervisorRangeStats =
       to,
     );
 
- 
+    /*
+     * SELECTED DELIVERY USER
+     *
+     * Can be:
+     * 1. A managed driver
+     * 2. The supervisor themselves
+     *    when canDeliverOrders === true
+     */
     let driver = null;
 
     if (driverId) {
-      driver =
-        await User.findOne({
-          _id: driverId,
+      const requestedDriverId =
+        String(driverId);
 
-          role: "driver",
+      const supervisorId =
+        req.user._id.toString();
 
-          supervisor:
+      const isSupervisorSelf =
+        requestedDriverId ===
+        supervisorId;
+
+      if (isSupervisorSelf) {
+        if (
+          req.user
+            .canDeliverOrders !==
+          true
+        ) {
+          res.status(403);
+
+          throw new Error(
+            "Supervisor is not allowed to perform driver work",
+          );
+        }
+
+        /*
+         * Fetch the supervisor so the
+         * returned object has the same
+         * shape as a selected driver.
+         */
+        driver =
+          await User.findById(
             req.user._id,
-        }).select(
-          "name iqamaId phone isActive lastLoginAt",
-        );
+          ).select(
+            "name iqamaId phone isActive lastLoginAt role canDeliverOrders",
+          );
 
-      if (!driver) {
-        res.status(404);
+        if (!driver) {
+          res.status(404);
 
-        throw new Error(
-          "Driver not found",
-        );
+          throw new Error(
+            "User not found",
+          );
+        }
+      } else {
+        /*
+         * Normal managed driver.
+         */
+        driver =
+          await User.findOne({
+            _id:
+              requestedDriverId,
+
+            role:
+              "driver",
+
+            supervisor:
+              req.user._id,
+          }).select(
+            "name iqamaId phone isActive lastLoginAt role",
+          );
+
+        if (!driver) {
+          res.status(404);
+
+          throw new Error(
+            "Driver not found",
+          );
+        }
       }
     }
 
@@ -885,17 +941,26 @@ export const getSupervisorRangeStats =
      * Whole team:
      * supervisor = logged-in supervisor
      *
-     * Specific driver:
-     * supervisor = logged-in supervisor
-     * rider = selected driver
+     * This intentionally includes
+     * supervisor's own delivery work,
+     * because supervisor-as-driver
+     * orders also use:
+     *
+     * supervisor = supervisor._id
+     *
+     * Specific delivery user:
+     * rider = selected user _id
      */
     const orderMatch = {
       supervisor:
         req.user._id,
 
       createdAt: {
-        $gte: start,
-        $lte: end,
+        $gte:
+          start,
+
+        $lte:
+          end,
       },
     };
 
@@ -907,27 +972,38 @@ export const getSupervisorRangeStats =
     const orderStats =
       await Order.aggregate([
         {
-          $match: orderMatch,
+          $match:
+            orderMatch,
         },
 
         {
           $group: {
-            _id: "$status",
+            _id:
+              "$status",
 
             count: {
-              $sum: 1,
+              $sum:
+                1,
             },
           },
         },
       ]);
 
-    let totalOrders = 0;
-    let pickedUp = 0;
-    let delivered = 0;
-    let cancelled = 0;
+    let totalOrders =
+      0;
+
+    let pickedUp =
+      0;
+
+    let delivered =
+      0;
+
+    let cancelled =
+      0;
 
     for (
-      const item of orderStats
+      const item of
+      orderStats
     ) {
       totalOrders +=
         item.count;
@@ -957,26 +1033,40 @@ export const getSupervisorRangeStats =
       }
     }
 
-   
+    /*
+     * SHIFT FILTER
+     *
+     * Whole team:
+     * all shifts owned by this
+     * supervisor, including their
+     * own delivery shifts.
+     *
+     * Selected delivery user:
+     * filter by driver _id.
+     */
     const shiftMatch = {
       supervisor:
         req.user._id,
 
       startedAt: {
-        $lt: end,
+        $lt:
+          end,
       },
 
       $or: [
         {
           endedAt: {
-            $gt: start,
+            $gt:
+              start,
           },
         },
 
         {
-          status: "active",
+          status:
+            "active",
 
-          endedAt: null,
+          endedAt:
+            null,
         },
       ],
     };
@@ -993,12 +1083,15 @@ export const getSupervisorRangeStats =
         "driver startedAt endedAt status",
       );
 
-    const now = new Date();
+    const now =
+      new Date();
 
-    let totalWorkedSeconds = 0;
+    let totalWorkedSeconds =
+      0;
 
     for (
-      const shift of shifts
+      const shift of
+      shifts
     ) {
       const effectiveEnd =
         shift.status ===
@@ -1020,117 +1113,134 @@ export const getSupervisorRangeStats =
     }
 
     /*
-     * Driver summary.
-     *
-     * For team range we can show
-     * total team drivers.
-     *
-     * For selected driver we return
-     * only that driver.
+     * DRIVER SUMMARY
      */
     let driverSummary;
 
     if (driver) {
       const activeShift =
         await DriverShift.findOne({
-          driver: driver._id,
+          driver:
+            driver._id,
 
-          status: "active",
+          status:
+            "active",
         }).select(
           "_id startedAt",
         );
 
+      const isSupervisorSelf =
+        driver._id.toString() ===
+        req.user._id.toString();
+
       driverSummary = {
-        mode: "driver",
+        mode:
+          "driver",
 
         driver,
+
+        isSupervisorSelf,
 
         workingNow:
           !!activeShift,
       };
- } else {
-  const managedDrivers =
-    await User.find({
-      role:
-        "driver",
+    } else {
+      /*
+       * Managed driver count should NOT
+       * include the supervisor themselves.
+       */
+      const managedDrivers =
+        await User.find({
+          role:
+            "driver",
 
-      supervisor:
-        req.user._id,
-    })
-      .select(
-        "_id isActive",
-      )
-      .lean();
-
-  const managedDriverIds =
-    managedDrivers.map(
-      (driver) =>
-        driver._id,
-    );
-
-  const totalDrivers =
-    managedDrivers.length;
-
-  const activeDrivers =
-    managedDrivers.filter(
-      (driver) =>
-        driver.isActive ===
-        true,
-    ).length;
-
-  const inactiveDrivers =
-    totalDrivers -
-    activeDrivers;
-
-  const workingNow =
-    managedDriverIds.length > 0
-      ? await DriverShift.countDocuments({
-          driver: {
-            $in:
-              managedDriverIds,
-          },
-
-          status:
-            "active",
+          supervisor:
+            req.user._id,
         })
-      : 0;
+          .select(
+            "_id isActive",
+          )
+          .lean();
 
-  driverSummary = {
-    mode:
-      "team",
+      const managedDriverIds =
+        managedDrivers.map(
+          (driver) =>
+            driver._id,
+        );
 
-    total:
-      totalDrivers,
+      const totalDrivers =
+        managedDrivers.length;
 
-    active:
-      activeDrivers,
+      const activeDrivers =
+        managedDrivers.filter(
+          (driver) =>
+            driver.isActive ===
+            true,
+        ).length;
 
-    inactive:
-      inactiveDrivers,
+      const inactiveDrivers =
+        totalDrivers -
+        activeDrivers;
 
-    workingNow,
-  };
-}
+      /*
+       * Working Now here represents
+       * managed drivers only.
+       *
+       * Supervisor working as driver
+       * is intentionally not counted
+       * as one of their own drivers.
+       */
+      const workingNow =
+        managedDriverIds.length >
+        0
+          ? await DriverShift.countDocuments(
+              {
+                driver: {
+                  $in:
+                    managedDriverIds,
+                },
+
+                status:
+                  "active",
+              },
+            )
+          : 0;
+
+      driverSummary = {
+        mode:
+          "team",
+
+        total:
+          totalDrivers,
+
+        active:
+          activeDrivers,
+
+        inactive:
+          inactiveDrivers,
+
+        workingNow,
+      };
+    }
 
     res.json({
-      success: true,
+      success:
+        true,
 
       timezone:
         TIME_ZONE,
 
       range: {
         from,
-
         to,
-
         start,
-
         end,
       },
 
-      scope: driver
-        ? "driver"
-        : "team",
+      scope:
+        driver
+          ? "driver"
+          : "team",
 
       drivers:
         driverSummary,
