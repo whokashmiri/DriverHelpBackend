@@ -61,6 +61,8 @@ function getRiyadhDayRange() {
 /**
  * CREATE DRIVER
  */
+
+
 export const createDriver = asyncHandler(
   async (req, res) => {
   const {
@@ -123,7 +125,24 @@ if (
     "Short name must not exceed 30 characters",
   );
 }
+let uploadedProfilePicture = null;
 
+if (req.file) {
+  const uploaded =
+    await uploadBufferToCloudinary(
+      req.file.buffer,
+      "driver_profiles",
+    );
+
+  uploadedProfilePicture = {
+    url:
+      uploaded.secure_url ??
+      uploaded.url,
+
+    publicId:
+      uploaded.public_id,
+  };
+}
 
 const driver =
   await User.create({
@@ -163,6 +182,8 @@ const driver =
 
     role: "driver",
 
+    canDeliverOrders: true,
+
     supervisor:
       req.user._id,
 
@@ -190,6 +211,9 @@ driver: {
 
   name:
     driver.name,
+  
+  canDeliverOrders:
+    driver.canDeliverOrders,
 
   shortName:
     driver.shortName,
@@ -235,6 +259,7 @@ export const getMyDrivers = asyncHandler(
           "role",
           "isActive",
           "supervisor",
+          "canDeliverOrders",
           "lastLoginAt",
           "createdAt",
           "updatedAt",
@@ -345,6 +370,7 @@ export const getDriverById = asyncHandler(
           "phone",
           "profilePicture",
           "vehicleType",
+          "canDeliverOrders",
           "role",
           "isActive",
           "supervisor",
@@ -465,6 +491,9 @@ res.json({
 
 profilePicture:
   driver.profilePicture,
+
+  canDeliverOrders:
+    driver.canDeliverOrders,
 
     vehicleType:
   driver.vehicleType,
