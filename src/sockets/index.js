@@ -43,6 +43,7 @@ async function authenticateSocket(
           "shortName",
           "profilePicture",
           "vehicleType",
+          "canDeliverOrders",
           "role",
           "supervisor",
           "isActive",

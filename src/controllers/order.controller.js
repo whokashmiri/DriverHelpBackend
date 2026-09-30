@@ -6,6 +6,55 @@ import {getNextOrderId} from "../services/orderSequence.service.js";
 
 const TIME_ZONE = "Asia/Riyadh";
 
+
+function canDeliverOrders(
+  user,
+) {
+  return (
+    user?.isActive === true &&
+    user?.canDeliverOrders === true &&
+    (
+      user?.role ===
+        "driver" ||
+      user?.role ===
+        "supervisor"
+    )
+  );
+}
+
+function getOrderSupervisorId(
+  user,
+) {
+  /*
+   * Normal driver:
+   * order belongs to assigned supervisor.
+   */
+  if (
+    user.role ===
+    "driver"
+  ) {
+    return (
+      user.supervisor ??
+      null
+    );
+  }
+
+  /*
+   * Supervisor working in
+   * driver mode:
+   * supervisor owns their
+   * own delivery order.
+   */
+  if (
+    user.role ===
+    "supervisor"
+  ) {
+    return user._id;
+  }
+
+  return null;
+}
+
 const CANCELLATION_REASONS = [
   "customer_unavailable",
   "wrong_address",
@@ -229,26 +278,30 @@ function normalizeOvernightPickupTime(
 export const createPickupOrder =
   asyncHandler(
     async (req, res) => {
-      if (
-        req.user.role !==
-        "driver"
-      ) {
-        res.status(403);
+   if (
+  !canDeliverOrders(
+    req.user,
+  )
+) {
+  res.status(403);
 
-        throw new Error(
-          "Only drivers can create orders"
-        );
-      }
+  throw new Error(
+    "This user is not allowed to create delivery orders",
+  );
+}
 
-      if (
-        !req.user.supervisor
-      ) {
-        res.status(400);
+const supervisorId =
+  getOrderSupervisorId(
+    req.user,
+  );
 
-        throw new Error(
-          "Driver is not assigned to a supervisor"
-        );
-      }
+if (!supervisorId) {
+  res.status(400);
+
+  throw new Error(
+    "Unable to determine order supervisor",
+  );
+}
 
       const pickupFile =
         getFile(
@@ -331,7 +384,7 @@ export const createPickupOrder =
             req.user._id,
 
           supervisor:
-            req.user.supervisor,
+            supervisorId,
 
           pickupPhoto: {
             url:
@@ -373,16 +426,17 @@ export const createPickupOrder =
 export const completeOrderDelivery =
   asyncHandler(
     async (req, res) => {
-      if (
-        req.user.role !==
-        "driver"
-      ) {
-        res.status(403);
+    if (
+  !canDeliverOrders(
+    req.user,
+  )
+) {
+  res.status(403);
 
-        throw new Error(
-          "Only drivers can complete orders",
-        );
-      }
+  throw new Error(
+    "This user is not allowed to complete delivery orders",
+  );
+}
 
       const deliveryFile =
         getFile(
@@ -526,9 +580,6 @@ order.status =
 
 await order.save();
 
-      order.status =
-        "delivered";
-
       await order.save();
 
       res.json({
@@ -551,16 +602,17 @@ await order.save();
 export const cancelOrder =
   asyncHandler(
     async (req, res) => {
-      if (
-        req.user.role !==
-        "driver"
-      ) {
-        res.status(403);
+     if (
+  !canDeliverOrders(
+    req.user,
+  )
+) {
+  res.status(403);
 
-        throw new Error(
-          "Only drivers can cancel orders"
-        );
-      }
+  throw new Error(
+    "This user is not allowed to cancel delivery orders",
+  );
+}
 
       const cancellationReason =
         req.body

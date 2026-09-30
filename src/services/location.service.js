@@ -150,6 +150,12 @@ function shouldSaveHistory(driverId) {
  * Also periodically saves history while
  * the driver has an active shift.
  */
+
+const supervisorId =
+  user.role === "supervisor"
+    ? user._id
+    : user.supervisor;
+    
 export async function updateDriverLocation({
   driverId,
   supervisorId,
@@ -164,7 +170,7 @@ export async function updateDriverLocation({
 
   if (!supervisorId) {
     throw createServiceError(
-      "Driver is not assigned to a supervisor"
+       "Supervisor ID is required"
     );
   }
 

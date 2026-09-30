@@ -4,6 +4,44 @@ import { DriverShift } from "../models/DriverShift.js";
 import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
+
+
+function canPerformDriverWork(
+  user,
+) {
+  return (
+    user?.canDeliverOrders === true &&
+    (
+      user?.role === "driver" ||
+      user?.role === "supervisor"
+    )
+  );
+}
+
+function getWorkingSupervisorId(
+  user,
+) {
+  if (
+    user?.role ===
+    "driver"
+  ) {
+    return (
+      user.supervisor ??
+      null
+    );
+  }
+
+  if (
+    user?.role ===
+    "supervisor"
+  ) {
+    return user._id;
+  }
+
+  return null;
+}
+
+
 function validateCoordinates(latitude, longitude) {
   const lat = Number(latitude);
   const lng = Number(longitude);
@@ -86,19 +124,30 @@ function optionalNumber(value, fieldName, options = {}) {
  */
 export const updateMyLocation = asyncHandler(
   async (req, res) => {
-    if (req.user.role !== "driver") {
-      res.status(403);
-      throw new Error(
-        "Only drivers can update driver location"
-      );
-    }
+   if (
+  !canPerformDriverWork(
+    req.user,
+  )
+) {
+  res.status(403);
 
-    if (!req.user.supervisor) {
-      res.status(400);
-      throw new Error(
-        "Driver is not assigned to a supervisor"
-      );
-    }
+  throw new Error(
+    "This user is not allowed to update delivery location",
+  );
+}
+
+const supervisorId =
+  getWorkingSupervisorId(
+    req.user,
+  );
+
+if (!supervisorId) {
+  res.status(400);
+
+  throw new Error(
+    "Unable to determine location supervisor",
+  );
+}
 
     const {
       latitude,
@@ -147,7 +196,7 @@ export const updateMyLocation = asyncHandler(
         },
         {
           $set: {
-            supervisor: req.user.supervisor,
+            supervisor: supervisorId,
 
             latitude,
             longitude,
@@ -182,7 +231,7 @@ export const updateMyLocation = asyncHandler(
     if (activeShift) {
       await DriverLocationHistory.create({
         driver: req.user._id,
-        supervisor: req.user.supervisor,
+        supervisor: supervisorId,
 
         shift: activeShift._id,
 
@@ -212,10 +261,12 @@ export const updateMyLocation = asyncHandler(
  */
 export const getMyLocation = asyncHandler(
   async (req, res) => {
-    if (req.user.role !== "driver") {
+    if (!canPerformDriverWork(
+    req.user,
+  )) {
       res.status(403);
       throw new Error(
-        "Only drivers can access this endpoint"
+        "This user is not allowed to access delivery location",
       );
     }
 

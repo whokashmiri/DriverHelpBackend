@@ -80,45 +80,56 @@ export const register = asyncHandler(async (req, res) => {
     );
   }
 
-  const user =
-    await User.create({
-      iqamaId:
-        cleanIqamaId,
+const user =
+  await User.create({
+    iqamaId:
+      cleanIqamaId,
 
-      name:
-        cleanName,
+    name:
+      cleanName,
 
-      password,
+    password,
 
-      role:
-        cleanRole,
-    });
+    role:
+      cleanRole,
 
-  res.status(201).json({
-    success: true,
-
-    token:
-      generateToken(
-        user._id,
-      ),
-
-    user: {
-      id:
-        user._id,
-
-      iqamaId:
-        user.iqamaId,
-
-      name:
-        user.name,
-
-      role:
-        user.role,
-
-      isActive:
-        user.isActive,
-    },
+    canDeliverOrders:
+      cleanRole ===
+      "supervisor",
   });
+
+res.status(201).json({
+  success: true,
+
+  token:
+    generateToken(
+      user._id,
+    ),
+
+  user: {
+    id:
+      user._id,
+
+    iqamaId:
+      user.iqamaId,
+
+    name:
+      user.name,
+
+    role:
+      user.role,
+
+    isActive:
+      user.isActive,
+
+    canDeliverOrders:
+      user.canDeliverOrders,
+
+    supervisor:
+      user.supervisor ??
+      null,
+  },
+});
 });
 
 
@@ -164,7 +175,11 @@ export const login = asyncHandler(async (req, res) => {
       name: user.name,
       role: user.role,
       isActive: user.isActive,
-      supervisor: user.supervisor,
+      canDeliverOrders:
+    user.canDeliverOrders,
+
+  supervisor:
+    user.supervisor,
     },
   });
 });
@@ -182,7 +197,11 @@ export const me = asyncHandler(async (req, res) => {
       name: user.name,
       role: user.role,
       isActive: user.isActive,
-      supervisor: user.supervisor,
+        canDeliverOrders:
+    user.canDeliverOrders,
+
+  supervisor:
+    user.supervisor,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
     },

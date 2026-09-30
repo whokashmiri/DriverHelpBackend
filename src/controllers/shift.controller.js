@@ -1,102 +1,197 @@
 import { DriverShift } from "../models/DriverShift.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-/**
- * DRIVER
- * Start a new shift.
- */
-export const startShift = asyncHandler(async (req, res) => {
-  if (req.user.role !== "driver") {
-    res.status(403);
-    throw new Error("Only drivers can start a shift");
+function canPerformDriverWork(user) {
+  return (
+    user?.canDeliverOrders === true &&
+    (
+      user?.role === "driver" ||
+      user?.role === "supervisor"
+    )
+  );
+}
+
+function getShiftSupervisorId(user) {
+  if (user.role === "driver") {
+    return user.supervisor ?? null;
   }
 
-  if (!req.user.supervisor) {
-    res.status(400);
-    throw new Error("Driver is not assigned to a supervisor");
+  if (user.role === "supervisor") {
+    return user._id;
   }
 
-  // A driver cannot have two active shifts at the same time.
-  const activeShift = await DriverShift.findOne({
-    driver: req.user._id,
-    status: "active",
-  });
+  return null;
+}
 
-  if (activeShift) {
-    res.status(409);
-    throw new Error("You already have an active shift");
-  }
 
-  const shift = await DriverShift.create({
-    driver: req.user._id,
-    supervisor: req.user.supervisor,
+export const startShift = asyncHandler(
+  async (req, res) => {
+    if (
+      !canPerformDriverWork(
+        req.user,
+      )
+    ) {
+      res.status(403);
 
-    // Always use server time.
-    startedAt: new Date(),
+      throw new Error(
+        "This user is not allowed to start a shift",
+      );
+    }
 
-    status: "active",
-  });
+    const supervisorId =
+      getShiftSupervisorId(
+        req.user,
+      );
 
-  res.status(201).json({
-    success: true,
-    message: "Shift started successfully",
-    shift,
-  });
-});
+    if (!supervisorId) {
+      res.status(400);
+
+      throw new Error(
+        "Unable to determine shift supervisor",
+      );
+    }
+
+    /*
+     * A user cannot have two
+     * active shifts at once.
+     */
+    const activeShift =
+      await DriverShift.findOne({
+        driver:
+          req.user._id,
+
+        status:
+          "active",
+      });
+
+    if (activeShift) {
+      res.status(409);
+
+      throw new Error(
+        "You already have an active shift",
+      );
+    }
+
+    const shift =
+      await DriverShift.create({
+        driver:
+          req.user._id,
+
+        supervisor:
+          supervisorId,
+
+        startedAt:
+          new Date(),
+
+        status:
+          "active",
+      });
+
+    res.status(201).json({
+      success: true,
+
+      message:
+        "Shift started successfully",
+
+      shift,
+    });
+  },
+);
 
 
 /**
  * DRIVER
  * Finish currently active shift.
  */
-export const endShift = asyncHandler(async (req, res) => {
-  if (req.user.role !== "driver") {
-    res.status(403);
-    throw new Error("Only drivers can end a shift");
-  }
+export const endShift = asyncHandler(
+  async (req, res) => {
+    if (
+      !canPerformDriverWork(
+        req.user,
+      )
+    ) {
+      res.status(403);
 
-  const shift = await DriverShift.findOne({
-    driver: req.user._id,
-    status: "active",
-  });
+      throw new Error(
+        "This user is not allowed to end a shift",
+      );
+    }
 
-  if (!shift) {
-    res.status(404);
-    throw new Error("No active shift found");
-  }
+    const shift =
+      await DriverShift.findOne({
+        driver:
+          req.user._id,
 
-  const endedAt = new Date();
+        status:
+          "active",
+      });
 
-  const durationSeconds = Math.max(
-    0,
-    Math.floor(
-      (endedAt.getTime() - shift.startedAt.getTime()) / 1000
-    )
-  );
+    if (!shift) {
+      res.status(404);
 
-  shift.endedAt = endedAt;
-  shift.durationSeconds = durationSeconds;
-  shift.status = "completed";
+      throw new Error(
+        "No active shift found",
+      );
+    }
 
-  await shift.save();
+    const endedAt =
+      new Date();
 
-  res.json({
-    success: true,
-    message: "Shift ended successfully",
+    const durationSeconds =
+      Math.max(
+        0,
+        Math.floor(
+          (
+            endedAt.getTime() -
+            shift.startedAt.getTime()
+          ) / 1000,
+        ),
+      );
 
-    shift: {
-      id: shift._id,
-      startedAt: shift.startedAt,
-      endedAt: shift.endedAt,
-      durationSeconds: shift.durationSeconds,
-      durationHours: Number(
-        (shift.durationSeconds / 3600).toFixed(2)
-      ),
-      status: shift.status,
-    },
-  });
-});
+    shift.endedAt =
+      endedAt;
 
+    shift.durationSeconds =
+      durationSeconds;
+
+    shift.status =
+      "completed";
+
+    await shift.save();
+
+    res.json({
+      success: true,
+
+      message:
+        "Shift ended successfully",
+
+      shift: {
+        id:
+          shift._id,
+
+        startedAt:
+          shift.startedAt,
+
+        endedAt:
+          shift.endedAt,
+
+        durationSeconds:
+          shift.durationSeconds,
+
+        durationHours:
+          Number(
+            (
+              shift.durationSeconds /
+              3600
+            ).toFixed(2),
+          ),
+
+        status:
+          shift.status,
+      },
+    });
+  },
+);
 
 /**
  * DRIVER

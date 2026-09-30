@@ -247,6 +247,9 @@ export async function updateDriverBySupervisor(
       normalizedPassword;
   }
 
+  driver.canDeliverOrders =
+  true;
+
   await driver.save();
 
   const safeDriver =

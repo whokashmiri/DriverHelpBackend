@@ -38,7 +38,7 @@ export async function startDriverShift({
 
   if (!supervisorId) {
     throw createServiceError(
-      "Driver is not assigned to a supervisor"
+      "Supervisor ID is required"
     );
   }
 

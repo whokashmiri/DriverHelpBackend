@@ -56,24 +56,45 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    role: {
-      type: String,
-      enum: [
-        "driver",
-        "supervisor",
-        "admin",
-      ],
-      default: "driver",
-      required: true,
-      index: true,
-    },
+   role: {
+  type: String,
 
-    supervisor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "LogisticsUser",
-      default: null,
-      index: true,
-    },
+  enum: [
+    "driver",
+    "supervisor",
+    "admin",
+  ],
+
+  default: "driver",
+
+  required: true,
+
+  index: true,
+},
+
+canDeliverOrders: {
+  type: Boolean,
+
+  default: function () {
+    return (
+      this.role === "driver"
+    );
+  },
+
+  index: true,
+},
+
+supervisor: {
+  type:
+    mongoose.Schema.Types
+      .ObjectId,
+
+  ref: "LogisticsUser",
+
+  default: null,
+
+  index: true,
+},
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
