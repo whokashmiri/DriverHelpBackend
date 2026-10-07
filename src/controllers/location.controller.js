@@ -3,6 +3,9 @@ import { DriverLocationHistory } from "../models/DriverLocationHistory.js";
 import { DriverShift } from "../models/DriverShift.js";
 import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import {
+  updateDriverLocation,
+} from "../services/location.service.js";
 
 
 
@@ -122,137 +125,115 @@ function optionalNumber(value, fieldName, options = {}) {
  * REST endpoint can initially be used by the mobile app.
  * Later Socket.IO can call the same location-update logic.
  */
-export const updateMyLocation = asyncHandler(
-  async (req, res) => {
-   if (
-  !canPerformDriverWork(
-    req.user,
-  )
-) {
-  res.status(403);
+export const updateMyLocation =
+  asyncHandler(
+    async (
+      req,
+      res,
+    ) => {
+      /*
+       * Driver or delivery-enabled
+       * supervisor only.
+       */
+      if (
+        !canPerformDriverWork(
+          req.user,
+        )
+      ) {
+        res.status(403);
 
-  throw new Error(
-    "This user is not allowed to update delivery location",
-  );
-}
-
-const supervisorId =
-  getWorkingSupervisorId(
-    req.user,
-  );
-
-if (!supervisorId) {
-  res.status(400);
-
-  throw new Error(
-    "Unable to determine location supervisor",
-  );
-}
-
-    const {
-      latitude,
-      longitude,
-    } = validateCoordinates(
-      req.body.latitude,
-      req.body.longitude
-    );
-
-    const accuracy = optionalNumber(
-      req.body.accuracy,
-      "accuracy",
-      {
-        min: 0,
+        throw new Error(
+          "This user is not allowed to update delivery location",
+        );
       }
-    );
 
-    const speed = optionalNumber(
-      req.body.speed,
-      "speed",
-      {
-        min: 0,
+      /*
+       * Normal driver:
+       * supervisor = assigned supervisor
+       *
+       * Supervisor Driver Mode:
+       * supervisor = themselves
+       */
+      const supervisorId =
+        getWorkingSupervisorId(
+          req.user,
+        );
+
+      if (
+        !supervisorId
+      ) {
+        res.status(400);
+
+        throw new Error(
+          "Unable to determine location supervisor",
+        );
       }
-    );
 
-    const heading = optionalNumber(
-      req.body.heading,
-      "heading",
-      {
-        min: 0,
-        max: 360,
+      /*
+       * Shared persistence logic.
+       */
+      const result =
+        await updateDriverLocation({
+          driverId:
+            req.user._id,
+
+          supervisorId,
+
+          payload:
+            req.body,
+
+          saveHistory:
+            true,
+        });
+
+      /*
+       * IMPORTANT:
+       *
+       * Background location enters
+       * through REST, but supervisor
+       * still receives exactly the
+       * same live socket event.
+       */
+      const io =
+        req.app.get(
+          "io",
+        );
+
+      if (io) {
+        io.to(
+          `supervisor:${supervisorId.toString()}`,
+        ).emit(
+          "driver:location:update",
+
+          result.liveLocation,
+        );
       }
-    );
 
-    const recordedAt = new Date();
+      return res.json({
+        success:
+          true,
 
-    const activeShift = await DriverShift.findOne({
-      driver: req.user._id,
-      status: "active",
-    }).select("_id");
+        location:
+          result.location,
 
-    const location =
-      await DriverLocation.findOneAndUpdate(
-        {
-          driver: req.user._id,
-        },
-        {
-          $set: {
-            supervisor: supervisorId,
+        recordedAt:
+          result.liveLocation
+            .recordedAt,
 
-            latitude,
-            longitude,
+        locationId:
+          result.location?._id?.toString() ??
+          null,
 
-            accuracy,
-            speed,
-            heading,
+        shiftId:
+          result.liveLocation
+            .shiftId,
 
-            recordedAt,
-          },
-
-          $setOnInsert: {
-            driver: req.user._id,
-          },
-        },
-        {
-          new: true,
-          upsert: true,
-          runValidators: true,
-        }
-      );
-
-    /**
-     * History:
-     *
-     * Initially save a point only while driver
-     * has an active shift.
-     *
-     * We can later throttle this to every
-     * 30-60 seconds.
-     */
-    if (activeShift) {
-      await DriverLocationHistory.create({
-        driver: req.user._id,
-        supervisor: supervisorId,
-
-        shift: activeShift._id,
-
-        latitude,
-        longitude,
-
-        accuracy,
-        speed,
-        heading,
-
-        recordedAt,
+        isWorking:
+          result.liveLocation
+            .isWorking,
       });
-    }
-
-    res.json({
-      success: true,
-      location,
-    });
-  }
-);
-
+    },
+  );
 
 /**
  * DRIVER
