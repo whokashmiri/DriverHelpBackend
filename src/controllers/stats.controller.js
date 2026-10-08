@@ -1270,3 +1270,515 @@ export const getSupervisorRangeStats =
       },
     });
   });
+
+
+  /**
+ * SUPERVISOR
+ *
+ * Get per-driver dashboard stats.
+ *
+ * Returns for every managed driver:
+ * - delivered today
+ * - delivered current month
+ * - first shift start today
+ * - last completed shift finish today
+ * - total working seconds today
+ * - working now
+ */
+export const getSupervisorDriversDashboard =
+  asyncHandler(async (req, res) => {
+    if (
+      req.user.role !==
+      "supervisor"
+    ) {
+      res.status(403);
+
+      throw new Error(
+        "Only supervisors can access this endpoint"
+      );
+    }
+
+    /*
+     * Load ALL managed drivers.
+     *
+     * Important:
+     * Even a driver with:
+     * - zero orders
+     * - zero shifts
+     *
+     * must still appear in the response.
+     */
+    const drivers =
+      await User.find({
+        role:
+          "driver",
+
+        supervisor:
+          req.user._id,
+      })
+        .select(
+          "_id name shortName iqamaId phone isActive lastLoginAt canDeliverOrders profilePicture vehicleType",
+        )
+        .lean();
+
+    if (
+      drivers.length === 0
+    ) {
+      return res.json({
+        success: true,
+
+        timezone:
+          TIME_ZONE,
+
+        drivers: [],
+      });
+    }
+
+    const driverIds =
+      drivers.map(
+        (driver) =>
+          driver._id
+      );
+
+    /*
+     * Riyadh ranges.
+     */
+    const today =
+      getPeriodRange(
+        "today"
+      );
+
+    const month =
+      getPeriodRange(
+        "month"
+      );
+
+    const now =
+      new Date();
+
+    /*
+     * =====================================================
+     * ORDERS
+     * =====================================================
+     *
+     * IMPORTANT:
+     *
+     * We use deliveryTime here,
+     * NOT createdAt.
+     *
+     * The dashboard specifically asks:
+     * "How many orders were DELIVERED today/month?"
+     */
+    const orderStats =
+      await Order.aggregate([
+        {
+          $match: {
+            supervisor:
+              req.user._id,
+
+            rider: {
+              $in:
+                driverIds,
+            },
+
+            status:
+              "delivered",
+
+            deliveryTime: {
+              $ne: null,
+
+              $gte:
+                month.start,
+
+              $lte:
+                month.end,
+            },
+          },
+        },
+
+        {
+          $group: {
+            _id:
+              "$rider",
+
+            deliveredThisMonth: {
+              $sum: 1,
+            },
+
+            deliveredToday: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $gte: [
+                          "$deliveryTime",
+                          today.start,
+                        ],
+                      },
+
+                      {
+                        $lte: [
+                          "$deliveryTime",
+                          today.end,
+                        ],
+                      },
+                    ],
+                  },
+
+                  1,
+
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+    /*
+     * Make order stats lookup map.
+     */
+    const orderStatsMap =
+      new Map();
+
+    for (
+      const item of
+      orderStats
+    ) {
+      orderStatsMap.set(
+        item._id.toString(),
+
+        {
+          deliveredToday:
+            item.deliveredToday ??
+            0,
+
+          deliveredThisMonth:
+            item.deliveredThisMonth ??
+            0,
+        }
+      );
+    }
+
+    /*
+     * =====================================================
+     * SHIFTS
+     * =====================================================
+     *
+     * Include:
+     * - completed shifts overlapping today
+     * - active shifts overlapping today
+     *
+     * This also supports overnight shifts.
+     */
+    const shifts =
+      await DriverShift.find({
+        driver: {
+          $in:
+            driverIds,
+        },
+
+        startedAt: {
+          $lt:
+            today.end,
+        },
+
+        $or: [
+          {
+            endedAt: {
+              $gt:
+                today.start,
+            },
+          },
+
+          {
+            status:
+              "active",
+
+            endedAt:
+              null,
+          },
+        ],
+      })
+        .select(
+          "driver startedAt endedAt status"
+        )
+        .sort({
+          startedAt:
+            1,
+        })
+        .lean();
+
+    const shiftStatsMap =
+      new Map();
+
+    for (
+      const shift of
+      shifts
+    ) {
+      const driverId =
+        shift.driver.toString();
+
+      if (
+        !shiftStatsMap.has(
+          driverId
+        )
+      ) {
+        shiftStatsMap.set(
+          driverId,
+          {
+            firstShiftStartedAt:
+              null,
+
+            lastShiftEndedAt:
+              null,
+
+            totalSeconds:
+              0,
+
+            workingNow:
+              false,
+          }
+        );
+      }
+
+      const stats =
+        shiftStatsMap.get(
+          driverId
+        );
+
+      /*
+       * For overnight shifts:
+       *
+       * Started yesterday 23:00
+       * Still working today 01:00
+       *
+       * dashboard start should effectively
+       * be today's midnight for today's stats.
+       */
+      const effectiveStart =
+        new Date(
+          Math.max(
+            new Date(
+              shift.startedAt
+            ).getTime(),
+
+            today.start.getTime()
+          )
+        );
+
+      if (
+        !stats.firstShiftStartedAt ||
+        effectiveStart.getTime() <
+          new Date(
+            stats.firstShiftStartedAt
+          ).getTime()
+      ) {
+        stats.firstShiftStartedAt =
+          effectiveStart;
+      }
+
+      /*
+       * Active shift continues until now.
+       */
+      const effectiveEnd =
+        shift.status ===
+        "active"
+          ? now
+          : shift.endedAt;
+
+      if (
+        effectiveEnd
+      ) {
+        stats.totalSeconds +=
+          getShiftOverlapSeconds(
+            shift.startedAt,
+
+            effectiveEnd,
+
+            today.start,
+
+            today.end
+          );
+      }
+
+      /*
+       * Only completed shift has
+       * an actual finish time.
+       */
+      if (
+        shift.endedAt
+      ) {
+        const endedAt =
+          new Date(
+            shift.endedAt
+          );
+
+        if (
+          endedAt >=
+            today.start &&
+          endedAt <=
+            today.end
+        ) {
+          if (
+            !stats.lastShiftEndedAt ||
+            endedAt.getTime() >
+              new Date(
+                stats.lastShiftEndedAt
+              ).getTime()
+          ) {
+            stats.lastShiftEndedAt =
+              endedAt;
+          }
+        }
+      }
+
+      if (
+        shift.status ===
+        "active"
+      ) {
+        stats.workingNow =
+          true;
+      }
+    }
+
+    /*
+     * =====================================================
+     * MERGE DRIVER + ORDERS + SHIFTS
+     * =====================================================
+     */
+    const dashboardDrivers =
+      drivers.map(
+        (driver) => {
+          const driverId =
+            driver._id.toString();
+
+          const orders =
+            orderStatsMap.get(
+              driverId
+            ) ?? {
+              deliveredToday:
+                0,
+
+              deliveredThisMonth:
+                0,
+            };
+
+          const work =
+            shiftStatsMap.get(
+              driverId
+            ) ?? {
+              firstShiftStartedAt:
+                null,
+
+              lastShiftEndedAt:
+                null,
+
+              totalSeconds:
+                0,
+
+              workingNow:
+                false,
+            };
+
+          return {
+            driver: {
+              _id:
+                driver._id,
+
+              name:
+                driver.name,
+
+              shortName:
+                driver.shortName,
+
+              iqamaId:
+                driver.iqamaId,
+
+              phone:
+                driver.phone ??
+                null,
+
+               profilePicture:
+                  driver.profilePicture ?? null,
+
+              isActive:
+                driver.isActive,
+
+              lastLoginAt:
+                driver.lastLoginAt ??
+                null,
+
+              canDeliverOrders:
+                driver.canDeliverOrders ===
+                true,
+            },
+
+            orders: {
+              deliveredToday:
+                orders.deliveredToday,
+
+              deliveredThisMonth:
+                orders.deliveredThisMonth,
+            },
+
+            todayWork: {
+              firstShiftStartedAt:
+                work.firstShiftStartedAt,
+
+              lastShiftEndedAt:
+                work.lastShiftEndedAt,
+
+              totalSeconds:
+                work.totalSeconds,
+
+              totalHours:
+                Number(
+                  (
+                    work.totalSeconds /
+                    3600
+                  ).toFixed(
+                    2
+                  )
+                ),
+
+              workingNow:
+                work.workingNow,
+            },
+          };
+        }
+      );
+
+    res.json({
+      success:
+        true,
+
+      timezone:
+        TIME_ZONE,
+
+      range: {
+        today: {
+          start:
+            today.start,
+
+          end:
+            today.end,
+        },
+
+        month: {
+          start:
+            month.start,
+
+          end:
+            month.end,
+        },
+      },
+
+      count:
+        dashboardDrivers.length,
+
+      drivers:
+        dashboardDrivers,
+    });
+  });
