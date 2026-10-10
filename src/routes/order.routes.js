@@ -9,6 +9,7 @@ import {
   getMyOrders,
   getOrderById,
   getSupervisorActiveOrders,
+  getSupervisorOrderCalendar,
   getSupervisorOrders,
 } from "../controllers/order.controller.js";
 
@@ -100,10 +101,43 @@ router.get(
   getSupervisorActiveOrders,
 );
 
-
+/**
+ * SUPERVISOR
+ *
+ * Get order history.
+ *
+ * Supports:
+ * - driverId
+ * - status
+ * - from
+ * - to
+ * - page
+ * - limit
+ */
 router.get(
   "/supervisor/history",
   getSupervisorOrders,
+);
+
+/**
+ * SUPERVISOR
+ *
+ * Get monthly per-day order totals
+ * for one driver.
+ *
+ * Query:
+ * driverId
+ * month=YYYY-MM
+ *
+ * Example:
+ *
+ * /orders/supervisor/calendar
+ * ?driverId=123
+ * &month=2026-10
+ */
+router.get(
+  "/supervisor/calendar",
+  getSupervisorOrderCalendar,
 );
 
 /**
