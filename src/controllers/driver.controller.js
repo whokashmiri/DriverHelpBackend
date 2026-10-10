@@ -392,6 +392,8 @@ export const getDriverById = asyncHandler(
       await DriverShift.exists({
         driver: driver._id,
         status: "active",
+         endedAt:
+    null,
       });
 
     res.json({
@@ -465,6 +467,8 @@ export const updateDriverStatus =
   await DriverShift.exists({
     driver: driver._id,
     status: "active",
+     endedAt:
+    null,
   });
 
 res.json({
@@ -554,8 +558,17 @@ if (
 }
 if (
   vehicleType !== undefined &&
-  !["car", "bike"].includes(
-    vehicleType,
+  vehicleType !== null &&
+  String(vehicleType).trim() !== "" &&
+  ![
+    "car",
+    "bike",
+  ].includes(
+    String(
+      vehicleType,
+    )
+      .trim()
+      .toLowerCase(),
   )
 ) {
   res.status(400);
