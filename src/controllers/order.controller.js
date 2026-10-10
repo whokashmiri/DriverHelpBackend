@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { Order } from "../models/Order.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -76,6 +77,124 @@ function parseDate(value, fieldName) {
   }
 
   return date;
+}
+
+async function resolveSupervisorOrderRider(
+  req,
+  driverId,
+) {
+  if (
+    !driverId
+  ) {
+    const error =
+      new Error(
+        "driverId is required",
+      );
+
+    error.statusCode =
+      400;
+
+    throw error;
+  }
+
+  const requestedDriverId =
+    String(
+      driverId,
+    ).trim();
+
+  if (
+    !mongoose.Types.ObjectId.isValid(
+      requestedDriverId,
+    )
+  ) {
+    const error =
+      new Error(
+        "Invalid driverId",
+      );
+
+    error.statusCode =
+      400;
+
+    throw error;
+  }
+
+  const supervisorId =
+    req.user._id.toString();
+
+  const isSupervisorSelf =
+    requestedDriverId ===
+    supervisorId;
+
+  /*
+   * Supervisor viewing their
+   * own delivery orders.
+   */
+  if (
+    isSupervisorSelf
+  ) {
+    if (
+      req.user
+        .canDeliverOrders !==
+      true
+    ) {
+      const error =
+        new Error(
+          "Supervisor is not allowed to perform driver work",
+        );
+
+      error.statusCode =
+        403;
+
+      throw error;
+    }
+
+    return {
+      riderId:
+        req.user._id,
+
+      isSupervisorSelf:
+        true,
+    };
+  }
+
+  /*
+   * Normal managed driver.
+   */
+  const managedDriver =
+    await User.findOne({
+      _id:
+        requestedDriverId,
+
+      role:
+        "driver",
+
+      supervisor:
+        req.user._id,
+    }).select(
+      "_id",
+    );
+
+  if (
+    !managedDriver
+  ) {
+    const error =
+      new Error(
+        "Driver not found",
+      );
+
+    error.statusCode =
+      404;
+
+    throw error;
+  }
+
+  return {
+    riderId:
+      managedDriver._id,
+
+    isSupervisorSelf:
+      false,
+  };
 }
 
 function getRiyadhTodayRange() {
@@ -1092,6 +1211,368 @@ export const getSupervisorOrders =
         },
 
         orders,
+      });
+    },
+  );
+
+
+
+
+  /**
+ * SUPERVISOR
+ *
+ * Get monthly order counts
+ * for one driver's calendar.
+ *
+ * Example:
+ *
+ * GET
+ * /orders/supervisor/calendar
+ * ?driverId=...
+ * &month=2026-10
+ *
+ * Returns:
+ *
+ * {
+ *   days: {
+ *     "2026-10-01": 5,
+ *     "2026-10-02": 12
+ *   }
+ * }
+ */
+export const getSupervisorOrderCalendar =
+  asyncHandler(
+    async (
+      req,
+      res,
+    ) => {
+      if (
+        req.user.role !==
+        "supervisor"
+      ) {
+        res.status(
+          403,
+        );
+
+        throw new Error(
+          "Only supervisors can view driver order calendars",
+        );
+      }
+
+      const {
+        driverId,
+        month,
+      } = req.query;
+
+      /*
+       * DRIVER
+       */
+      const {
+        riderId,
+      } =
+        await resolveSupervisorOrderRider(
+          req,
+          driverId,
+        );
+
+      /*
+       * MONTH
+       *
+       * Required format:
+       * YYYY-MM
+       */
+      const normalizedMonth =
+        typeof month ===
+        "string"
+          ? month.trim()
+          : "";
+
+      if (
+        !/^\d{4}-\d{2}$/.test(
+          normalizedMonth,
+        )
+      ) {
+        res.status(
+          400,
+        );
+
+        throw new Error(
+          "month must be in YYYY-MM format",
+        );
+      }
+
+      /*
+       * Parse month in Riyadh,
+       * not device/server timezone.
+       */
+      const monthStart =
+        DateTime.fromFormat(
+          normalizedMonth,
+          "yyyy-MM",
+          {
+            zone:
+              TIME_ZONE,
+          },
+        ).startOf(
+          "month",
+        );
+
+      if (
+        !monthStart.isValid
+      ) {
+        res.status(
+          400,
+        );
+
+        throw new Error(
+          "Invalid month",
+        );
+      }
+
+      const monthEnd =
+        monthStart.endOf(
+          "month",
+        );
+
+      /*
+       * Convert Riyadh month
+       * boundaries to UTC for
+       * MongoDB.
+       */
+      const start =
+        monthStart
+          .toUTC()
+          .toJSDate();
+
+      const end =
+        monthEnd
+          .toUTC()
+          .toJSDate();
+
+      /*
+       * Important:
+       *
+       * History already filters
+       * orders using createdAt.
+       *
+       * Calendar uses createdAt
+       * too so both features
+       * always agree.
+       */
+      const orderCounts =
+        await Order.aggregate([
+          {
+            $match: {
+              supervisor:
+                req.user._id,
+
+              rider:
+                riderId,
+
+              createdAt: {
+                $gte:
+                  start,
+
+                $lte:
+                  end,
+              },
+            },
+          },
+
+          /*
+           * Convert every order
+           * timestamp into a
+           * Riyadh calendar date.
+           */
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format:
+                    "%Y-%m-%d",
+
+                  date:
+                    "$createdAt",
+
+                  timezone:
+                    TIME_ZONE,
+                },
+              },
+
+              totalOrders: {
+                $sum: 1,
+              },
+
+              delivered: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$status",
+                        "delivered",
+                      ],
+                    },
+
+                    1,
+
+                    0,
+                  ],
+                },
+              },
+
+              cancelled: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$status",
+                        "cancelled",
+                      ],
+                    },
+
+                    1,
+
+                    0,
+                  ],
+                },
+              },
+
+              active: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$status",
+                        "picked_up",
+                      ],
+                    },
+
+                    1,
+
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+
+          {
+            $sort: {
+              _id: 1,
+            },
+          },
+        ]);
+
+      /*
+       * Calendar's main requirement:
+       *
+       * date => total orders.
+       */
+      const days = {};
+
+      /*
+       * Optional richer data.
+       *
+       * Useful later if we want:
+       *
+       * delivered: 8
+       * cancelled: 2
+       */
+      const dayStats =
+        {};
+
+      /*
+       * First fill every date
+       * with zero.
+       */
+      let cursor =
+        monthStart.startOf(
+          "day",
+        );
+
+      while (
+        cursor <=
+        monthEnd
+      ) {
+        const date =
+          cursor.toFormat(
+            "yyyy-MM-dd",
+          );
+
+        days[date] =
+          0;
+
+        dayStats[date] =
+          {
+            total:
+              0,
+
+            delivered:
+              0,
+
+            cancelled:
+              0,
+
+            active:
+              0,
+          };
+
+        cursor =
+          cursor.plus({
+            days: 1,
+          });
+      }
+
+      /*
+       * Replace zero values
+       * with actual aggregates.
+       */
+      for (
+        const item of
+        orderCounts
+      ) {
+        days[item._id] =
+          item.totalOrders;
+
+        dayStats[item._id] =
+          {
+            total:
+              item.totalOrders,
+
+            delivered:
+              item.delivered,
+
+            cancelled:
+              item.cancelled,
+
+            active:
+              item.active,
+          };
+      }
+
+      res.json({
+        success:
+          true,
+
+        timezone:
+          TIME_ZONE,
+
+        driverId:
+          String(
+            driverId,
+          ),
+
+        month:
+          normalizedMonth,
+
+        range: {
+          start,
+          end,
+        },
+
+        days,
+
+        dayStats,
       });
     },
   );
