@@ -1,6 +1,38 @@
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 
+
+const accommodationLocationSchema =
+  new mongoose.Schema(
+    {
+      type: {
+        type: String,
+        enum: ["Point"],
+        required: true,
+      },
+      coordinates: {
+        type: [Number],
+        required: true,
+        validate: {
+          validator(value) {
+            return (
+              Array.isArray(value) &&
+              value.length === 2 &&
+              value.every(Number.isFinite) &&
+              value[0] >= -180 &&
+              value[0] <= 180 &&
+              value[1] >= -90 &&
+              value[1] <= 90
+            );
+          },
+          message: "Invalid accommodation coordinates",
+        },
+      },
+    },
+    { _id: false },
+  );
+
+
 const userSchema = new mongoose.Schema(
   {
     iqamaId: {
@@ -48,6 +80,29 @@ const userSchema = new mongoose.Schema(
       enum: ["car", "bike"],
       required: false,
     },
+
+    
+vehiclePlateNumber: {
+  type: String,
+  default: null,
+  trim: true,
+  uppercase: true,
+  maxlength: 20,
+},
+
+
+accommodation: {
+  address: {
+    type: String,
+    default: null,
+    trim: true,
+  },
+  location: {
+    type: accommodationLocationSchema,
+    default: undefined,
+  },
+},
+
 
     password: {
       type: String,
@@ -117,6 +172,18 @@ supervisor: {
     timestamps: true,
   },
 );
+
+
+
+
+userSchema.index(
+  { "accommodation.location": "2dsphere" },
+  {
+    name: "accommodation_location_2dsphere",
+  },
+);
+
+
 
 /**
  * Hash password before save

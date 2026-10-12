@@ -1,3 +1,5 @@
+//driver.service.js
+
 import mongoose from "mongoose";
 
 import { User } from "../models/User.js";
@@ -81,6 +83,8 @@ export async function updateDriverBySupervisor(
     phone,
     password,
     vehicleType,
+    vehiclePlateNumber,
+    accommodation,
     profilePicture,
   } = payload;
 
@@ -253,6 +257,192 @@ export async function updateDriverBySupervisor(
         normalizedVehicleType;
     }
   }
+
+
+  
+  /*
+   * ==========================================
+   * VEHICLE PLATE NUMBER
+   * ==========================================
+   *
+   * Optional field.
+   *
+   * null / empty string:
+   * remove vehicle plate number.
+   */
+  if (vehiclePlateNumber !== undefined) {
+    if (
+      vehiclePlateNumber !== null &&
+      typeof vehiclePlateNumber !== "string"
+    ) {
+      throw createServiceError(
+        "Vehicle plate number must be a string",
+        400,
+      );
+    }
+
+    const normalizedPlate =
+      vehiclePlateNumber?.trim().toUpperCase() || null;
+
+    if (normalizedPlate && normalizedPlate.length > 20) {
+      throw createServiceError(
+        "Vehicle plate number must not exceed 20 characters",
+        400,
+      );
+    }
+
+    driver.vehiclePlateNumber = normalizedPlate;
+  }
+
+  /*
+   * ==========================================
+   * ACCOMMODATION
+   * ==========================================
+   *
+   * Supports partial updates.
+   *
+   * Example:
+   *
+   * {
+   *   address: "Al Malaz, Riyadh",
+   *   location: {
+   *     type: "Point",
+   *     coordinates: [46.723, 24.668]
+   *   }
+   * }
+   *
+   * Coordinates order:
+   * [longitude, latitude]
+   *
+   * null:
+   * remove all accommodation information.
+   */
+  if (accommodation !== undefined) {
+  if (accommodation === null) {
+  driver.set("accommodation.address", null);
+  driver.set("accommodation.location", undefined);
+} else {
+      if (
+        typeof accommodation !== "object" ||
+        Array.isArray(accommodation)
+      ) {
+        throw createServiceError(
+          "Accommodation must be an object or null",
+          400,
+        );
+      }
+
+      /*
+       * ACCOMMODATION ADDRESS
+       */
+      if (accommodation.address !== undefined) {
+        if (
+          accommodation.address !== null &&
+          typeof accommodation.address !== "string"
+        ) {
+          throw createServiceError(
+            "Accommodation address must be a string",
+            400,
+          );
+        }
+
+        const normalizedAddress =
+          accommodation.address?.trim() || null;
+
+        driver.set(
+          "accommodation.address",
+          normalizedAddress,
+        );
+      }
+
+      /*
+       * ACCOMMODATION GPS LOCATION
+       */
+      if (accommodation.location !== undefined) {
+        const location = accommodation.location;
+
+        if (location === null) {
+          driver.set(
+            "accommodation.location",
+            {
+              type: "Point",
+              coordinates: undefined,
+            },
+          );
+        } else {
+          if (
+            typeof location !== "object" ||
+            Array.isArray(location)
+          ) {
+            throw createServiceError(
+              "Accommodation location must be an object",
+              400,
+            );
+          }
+
+          if (
+            location.type !== undefined &&
+            location.type !== "Point"
+          ) {
+            throw createServiceError(
+              "Accommodation location type must be Point",
+              400,
+            );
+          }
+
+          if (location.coordinates !== undefined) {
+            const coordinates = location.coordinates;
+
+            if (coordinates === null) {
+              driver.set(
+                "accommodation.location.coordinates",
+                undefined,
+              );
+            } else {
+              if (
+                !Array.isArray(coordinates) ||
+                coordinates.length !== 2
+              ) {
+                throw createServiceError(
+                  "Accommodation coordinates must contain longitude and latitude",
+                  400,
+                );
+              }
+
+              const [longitude, latitude] = coordinates;
+
+              if (
+                typeof longitude !== "number" ||
+                typeof latitude !== "number" ||
+                !Number.isFinite(longitude) ||
+                !Number.isFinite(latitude) ||
+                longitude < -180 ||
+                longitude > 180 ||
+                latitude < -90 ||
+                latitude > 90
+              ) {
+                throw createServiceError(
+                  "Invalid accommodation coordinates",
+                  400,
+                );
+              }
+
+              driver.set(
+                "accommodation.location.coordinates",
+                [longitude, latitude],
+              );
+
+              driver.set(
+                "accommodation.location.type",
+                "Point",
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
 
   /*
    * ==========================================
