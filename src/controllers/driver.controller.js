@@ -12,6 +12,37 @@ import {
 } from "../utils/uploadToCloudinary.js";
 
 
+function parseAccommodation(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      const error = new Error(
+        "Accommodation must be valid JSON",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    const error = new Error(
+      "Accommodation must be an object or null",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return value;
+}
+
 
 function getRiyadhDayRange() {
   const now = new Date();
@@ -69,6 +100,8 @@ export const createDriver = asyncHandler(
    iqamaId,
   name,
   shortName,
+  vehiclePlateNumber,
+  accommodation,
   phone,
   password,
   vehicleType,
@@ -144,6 +177,37 @@ if (req.file) {
   };
 }
 
+
+
+const parsedAccommodation =
+  parseAccommodation(accommodation);
+
+const normalizedVehiclePlateNumber =
+  vehiclePlateNumber == null
+    ? null
+    : typeof vehiclePlateNumber === "string"
+      ? vehiclePlateNumber.trim().toUpperCase() || null
+      : undefined;
+
+if (
+  vehiclePlateNumber != null &&
+  typeof vehiclePlateNumber !== "string"
+) {
+  res.status(400);
+  throw new Error(
+    "Vehicle plate number must be a string",
+  );
+}
+
+if (
+  normalizedVehiclePlateNumber?.length > 20
+) {
+  res.status(400);
+  throw new Error(
+    "Vehicle plate number must not exceed 20 characters",
+  );
+}
+
 const driver =
   await User.create({
     iqamaId:
@@ -177,6 +241,12 @@ const driver =
           },
 
     password,
+
+    
+vehiclePlateNumber: normalizedVehiclePlateNumber,
+
+accommodation: parsedAccommodation ?? undefined,
+
 
     vehicleType,
 
@@ -221,6 +291,14 @@ driver: {
   phone:
     driver.phone,
 
+    
+vehiclePlateNumber:
+  driver.vehiclePlateNumber ?? null,
+
+accommodation:
+  driver.accommodation ?? null,
+
+
   profilePicture:
     driver.profilePicture,
 
@@ -259,6 +337,8 @@ export const getMyDrivers = asyncHandler(
           "role",
           "isActive",
           "supervisor",
+          "vehiclePlateNumber",
+          "accommodation",
           "canDeliverOrders",
           "lastLoginAt",
           "createdAt",
@@ -373,6 +453,8 @@ export const getDriverById = asyncHandler(
           "canDeliverOrders",
           "role",
           "isActive",
+          "vehiclePlateNumber",
+          "accommodation",
           "supervisor",
           "lastLoginAt",
           "createdAt",
@@ -493,6 +575,9 @@ res.json({
     shortName:
   driver.shortName,
 
+  vehiclePlateNumber: driver.vehiclePlateNumber,
+accommodation: driver.accommodation,
+
 profilePicture:
   driver.profilePicture,
 
@@ -538,6 +623,8 @@ profilePicture:
         phone,
         shortName,
         vehicleType,
+        vehiclePlateNumber,
+        accommodation,
         password,
       } = req.body;
 
@@ -546,6 +633,8 @@ if (
   shortName === undefined &&
   iqamaId === undefined &&
   phone === undefined &&
+  vehiclePlateNumber === undefined &&
+  accommodation === undefined &&
   password === undefined &&
   vehicleType === undefined &&
   !req.file
@@ -606,6 +695,8 @@ if (req.file) {
       iqamaId,
       phone,
       vehicleType,
+      vehiclePlateNumber,
+      accommodation: parseAccommodation(accommodation),
       password,
       profilePicture,
     },
