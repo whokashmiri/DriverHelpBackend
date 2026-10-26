@@ -1,62 +1,39 @@
-import {
-  DriverLocation,
-} from "../models/DriverLocation.js";
 
-import {
-  DriverLocationHistory,
-} from "../models/DriverLocationHistory.js";
+import { DriverLocation } from "../models/DriverLocation.js";
+import { DriverShift } from "../models/DriverShift.js";
 
-import {
-  DriverShift,
-} from "../models/DriverShift.js";
+const MAX_LOCATION_AGE_MS = 2 * 60 * 1000;
+const MAX_FUTURE_SKEW_MS = 30 * 1000;
 
-const HISTORY_INTERVAL_MS =
-  60 * 1000;
-
-const lastHistorySave =
-  new Map();
-
-function createServiceError(
-  message,
-  statusCode = 400,
-) {
-  const error =
-    new Error(message);
-
-  error.statusCode =
-    statusCode;
-
+function createServiceError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
   return error;
 }
 
-function validateCoordinates(
-  latitude,
-  longitude,
-) {
-  const lat =
-    Number(latitude);
-
-  const lng =
-    Number(longitude);
-
+function validateCoordinates(latitude, longitude) {
   if (
-    !Number.isFinite(lat) ||
-    lat < -90 ||
-    lat > 90
+    latitude === undefined ||
+    latitude === null ||
+    latitude === "" ||
+    longitude === undefined ||
+    longitude === null ||
+    longitude === ""
   ) {
     throw createServiceError(
-      "Invalid latitude",
+      "Latitude and longitude are required",
     );
   }
 
-  if (
-    !Number.isFinite(lng) ||
-    lng < -180 ||
-    lng > 180
-  ) {
-    throw createServiceError(
-      "Invalid longitude",
-    );
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    throw createServiceError("Invalid latitude");
+  }
+
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+    throw createServiceError("Invalid longitude");
   }
 
   return {
@@ -65,282 +42,251 @@ function validateCoordinates(
   };
 }
 
-function optionalNumber(
-  value,
-  fieldName,
-  {
-    min,
-    max,
-  } = {},
-) {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
+function optionalNumber(value, { min, max } = {}) {
+  if (value === undefined || value === null || value === "") {
     return null;
   }
 
-  const number =
-    Number(value);
+  const number = Number(value);
 
-  if (
-    !Number.isFinite(number)
-  ) {
-    throw createServiceError(
-      `${fieldName} must be a valid number`,
-    );
+  // Unavailable sensor measurements should not reject
+  // an otherwise valid GPS coordinate.
+  if (!Number.isFinite(number)) {
+    return null;
   }
 
-  if (
-    min !== undefined &&
-    number < min
-  ) {
-    throw createServiceError(
-      `${fieldName} must be at least ${min}`,
-    );
+  if (min !== undefined && number < min) {
+    return null;
   }
 
-  if (
-    max !== undefined &&
-    number > max
-  ) {
-    throw createServiceError(
-      `${fieldName} must not exceed ${max}`,
-    );
+  if (max !== undefined && number > max) {
+    return null;
   }
 
   return number;
 }
 
-function normalizeLocationPayload(
-  data,
-) {
-  const {
-    latitude,
-    longitude,
-  } =
-    validateCoordinates(
-      data?.latitude,
-      data?.longitude,
+function normalizeLocationPayload(payload) {
+  const { latitude, longitude } = validateCoordinates(
+    payload?.latitude,
+    payload?.longitude,
+  );
+
+  const now = Date.now();
+
+  // Compatibility with older mobile builds:
+  // use server receipt time when recordedAt is absent.
+  // Updated mobile clients should ALWAYS send recordedAt.
+  let recordedAtMs = now;
+
+  if (
+    payload?.recordedAt !== undefined &&
+    payload?.recordedAt !== null
+  ) {
+    recordedAtMs = new Date(payload.recordedAt).getTime();
+  }
+
+  if (!Number.isFinite(recordedAtMs)) {
+    throw createServiceError("Invalid location timestamp");
+  }
+
+  if (recordedAtMs > now + MAX_FUTURE_SKEW_MS) {
+    throw createServiceError(
+      "Location timestamp is in the future",
     );
+  }
+
+  if (recordedAtMs < now - MAX_LOCATION_AGE_MS) {
+    throw createServiceError(
+      "Location is too old for live tracking",
+    );
+  }
 
   return {
     latitude,
     longitude,
-
-    accuracy:
-      optionalNumber(
-        data?.accuracy,
-        "accuracy",
-        {
-          min: 0,
-        },
-      ),
-
-    speed:
-      optionalNumber(
-        data?.speed,
-        "speed",
-        {
-          min: 0,
-        },
-      ),
-
-    heading:
-      optionalNumber(
-        data?.heading,
-        "heading",
-        {
-          min: 0,
-          max: 360,
-        },
-      ),
+    accuracy: optionalNumber(payload?.accuracy, { min: 0 }),
+    speed: optionalNumber(payload?.speed, { min: 0 }),
+    heading: optionalNumber(payload?.heading, {
+      min: 0,
+      max: 360,
+    }),
+    recordedAt: new Date(recordedAtMs),
   };
 }
 
-function shouldSaveHistory(
-  driverId,
-) {
-  const now =
-    Date.now();
-
-  const lastSaved =
-    lastHistorySave.get(
-      driverId,
-    );
-
-  if (
-    !lastSaved ||
-    now - lastSaved >=
-      HISTORY_INTERVAL_MS
-  ) {
-    lastHistorySave.set(
-      driverId,
-      now,
-    );
-
-    return true;
-  }
-
-  return false;
+function buildLiveLocation(location, activeShift) {
+  return {
+    driverId: location.driver.toString(),
+    latitude: location.latitude,
+    longitude: location.longitude,
+    accuracy: location.accuracy ?? null,
+    speed: location.speed ?? null,
+    heading: location.heading ?? null,
+    recordedAt: location.recordedAt.toISOString(),
+    shiftId: activeShift._id.toString(),
+    isWorking: true,
+  };
 }
 
 /**
- * Shared location update service.
+ * Shared service used by:
+ * - Foreground Socket.IO tracking
+ * - Background HTTP tracking
  *
- * Used by:
- * - Socket.IO foreground tracking
- * - REST background tracking
+ * Only DriverLocation is updated.
+ * DriverLocationHistory is not used.
  */
 export async function updateDriverLocation({
   driverId,
   supervisorId,
   payload,
-  saveHistory = true,
 }) {
   if (!driverId) {
-    throw createServiceError(
-      "Driver ID is required",
-    );
+    throw createServiceError("Driver ID is required");
   }
 
   if (!supervisorId) {
+    throw createServiceError("Supervisor ID is required");
+  }
+
+  const data = normalizeLocationPayload(payload);
+
+  /*
+   * Only drivers with a currently active shift
+   * are allowed to submit live GPS updates.
+   */
+  const activeShift = await DriverShift.findOne({
+    driver: driverId,
+    supervisor: supervisorId,
+    status: "active",
+  })
+    .select("_id startedAt")
+    .lean();
+
+  if (!activeShift) {
     throw createServiceError(
-      "Supervisor ID is required",
+      "Location tracking requires an active shift",
+      403,
     );
   }
 
-  const {
-    latitude,
-    longitude,
-    accuracy,
-    speed,
-    heading,
-  } =
-    normalizeLocationPayload(
-      payload,
+  /*
+   * Reject points recorded before the current shift.
+   * This also prevents old queued points from a
+   * previous shift being stored in a new shift.
+   */
+  if (data.recordedAt < activeShift.startedAt) {
+    throw createServiceError(
+      "Location was recorded before the active shift",
+      409,
     );
-
-  const recordedAt =
-    new Date();
+  }
 
   /*
-   * Resolve active shift.
+   * Update only if this GPS timestamp is newer.
+   * The timestamp comparison is atomic in MongoDB.
+   *
+   * Do not use upsert with the timestamp filter:
+   * concurrent requests could cause duplicate-key
+   * errors against the unique driver index.
    */
-  const activeShift =
-    await DriverShift.findOne({
+  let location = await DriverLocation.findOneAndUpdate(
+    {
       driver: driverId,
-      status: "active",
-    })
-      .select("_id")
-      .lean();
+      recordedAt: { $lt: data.recordedAt },
+    },
+    {
+      $set: {
+        supervisor: supervisorId,
+        ...data,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  );
+
+  let accepted = Boolean(location);
 
   /*
-   * Always update latest location.
+   * If no document was updated, there are
+   * two possibilities:
+   *
+   * 1. No location exists yet.
+   * 2. A same-age or newer location exists.
    */
-  const location =
-    await DriverLocation.findOneAndUpdate(
-      {
-        driver:
-          driverId,
-      },
-
-      {
-        $set: {
-          supervisor:
-            supervisorId,
-
-          latitude,
-          longitude,
-
-          accuracy,
-          speed,
-          heading,
-
-          recordedAt,
-        },
-
-        $setOnInsert: {
-          driver:
-            driverId,
-        },
-      },
-
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-      },
-    );
-
-  let historySaved =
-    false;
-
-  /*
-   * Save route history only
-   * while working.
-   */
-  if (
-    saveHistory &&
-    activeShift &&
-    shouldSaveHistory(
-      driverId.toString(),
-    )
-  ) {
-    await DriverLocationHistory.create({
-      driver:
-        driverId,
-
-      supervisor:
-        supervisorId,
-
-      shift:
-        activeShift._id,
-
-      latitude,
-      longitude,
-
-      accuracy,
-      speed,
-      heading,
-
-      recordedAt,
+  if (!location) {
+    const existing = await DriverLocation.findOne({
+      driver: driverId,
     });
 
-    historySaved =
-      true;
+    if (!existing) {
+      try {
+        location = await DriverLocation.create({
+          driver: driverId,
+          supervisor: supervisorId,
+          ...data,
+        });
+
+        accepted = true;
+      } catch (error) {
+        /*
+         * Another request may have created the
+         * first document concurrently.
+         *
+         * Retry the conditional update rather
+         * than treating this as a fatal error.
+         */
+        if (error.code !== 11000) {
+          throw error;
+        }
+
+        location = await DriverLocation.findOneAndUpdate(
+          {
+            driver: driverId,
+            recordedAt: { $lt: data.recordedAt },
+          },
+          {
+            $set: {
+              supervisor: supervisorId,
+              ...data,
+            },
+          },
+          {
+            new: true,
+            runValidators: true,
+          },
+        );
+
+        accepted = Boolean(location);
+      }
+    }
+  }
+
+  /*
+   * The incoming coordinate was not newer.
+   * Return the stored location without broadcasting
+   * this old update.
+   */
+  if (!location) {
+    location = await DriverLocation.findOne({
+      driver: driverId,
+    });
+  }
+
+  if (!location) {
+    throw createServiceError(
+      "Unable to retrieve driver location",
+      500,
+    );
   }
 
   return {
     location,
-
     activeShift,
-
-    historySaved,
-
-    liveLocation: {
-      driverId:
-        driverId.toString(),
-
-      latitude,
-      longitude,
-
-      accuracy,
-      speed,
-      heading,
-
-      recordedAt:
-        recordedAt.toISOString(),
-
-      shiftId:
-        activeShift?._id?.toString() ??
-        null,
-
-      isWorking:
-        Boolean(
-          activeShift,
-        ),
-    },
+    accepted,
+    liveLocation: buildLiveLocation(location, activeShift),
   };
 }
