@@ -1,253 +1,135 @@
+
 import { DriverLocation } from "../models/DriverLocation.js";
-import { DriverLocationHistory } from "../models/DriverLocationHistory.js";
-import { DriverShift } from "../models/DriverShift.js";
 import { User } from "../models/User.js";
+
 import { asyncHandler } from "../utils/asyncHandler.js";
+
 import {
   updateDriverLocation,
 } from "../services/location.service.js";
 
+/*
+ * Drivers can deliver.
+ * Supervisors require delivery permission.
+ */
+function canPerformDriverWork(user) {
+  if (!user || user.isActive === false) {
+    return false;
+  }
 
+  if (user.role === "driver") {
+    return true;
+  }
 
-function canPerformDriverWork(
-  user,
-) {
   return (
-    user?.canDeliverOrders === true &&
-    (
-      user?.role === "driver" ||
-      user?.role === "supervisor"
-    )
+    user.role === "supervisor" &&
+    user.canDeliverOrders === true
   );
 }
 
-function getWorkingSupervisorId(
-  user,
-) {
-  if (
-    user?.role ===
-    "driver"
-  ) {
-    return (
-      user.supervisor ??
-      null
-    );
+function getWorkingSupervisorId(user) {
+  if (user?.role === "driver") {
+    return user.supervisor ?? null;
   }
 
-  if (
-    user?.role ===
-    "supervisor"
-  ) {
+  if (user?.role === "supervisor") {
     return user._id;
   }
 
   return null;
 }
 
-
-function validateCoordinates(latitude, longitude) {
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-
-  if (
-    !Number.isFinite(lat) ||
-    lat < -90 ||
-    lat > 90
-  ) {
-    const error = new Error("Invalid latitude");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (
-    !Number.isFinite(lng) ||
-    lng < -180 ||
-    lng > 180
-  ) {
-    const error = new Error("Invalid longitude");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  return {
-    latitude: lat,
-    longitude: lng,
-  };
-}
-
-function optionalNumber(value, fieldName, options = {}) {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
-    return null;
-  }
-
-  const number = Number(value);
-
-  if (!Number.isFinite(number)) {
-    const error = new Error(`${fieldName} must be a valid number`);
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (
-    options.min !== undefined &&
-    number < options.min
-  ) {
-    const error = new Error(
-      `${fieldName} must be at least ${options.min}`
-    );
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (
-    options.max !== undefined &&
-    number > options.max
-  ) {
-    const error = new Error(
-      `${fieldName} must not exceed ${options.max}`
-    );
-    error.statusCode = 400;
-    throw error;
-  }
-
-  return number;
+function httpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }
 
 /**
- * DRIVER
+ * DRIVER / DELIVERY SUPERVISOR
  *
- * Update current location.
+ * POST /api/locations/me
  *
- * REST endpoint can initially be used by the mobile app.
- * Later Socket.IO can call the same location-update logic.
+ * Used by Expo background tracking.
  */
-export const updateMyLocation =
-  asyncHandler(
-    async (
-      req,
-      res,
-    ) => {
-      /*
-       * Driver or delivery-enabled
-       * supervisor only.
-       */
-      if (
-        !canPerformDriverWork(
-          req.user,
-        )
-      ) {
-        res.status(403);
+export const updateMyLocation = asyncHandler(
+  async (req, res) => {
+    if (!canPerformDriverWork(req.user)) {
+      throw httpError(
+        "This user is not allowed to update delivery location",
+        403,
+      );
+    }
 
-        throw new Error(
-          "This user is not allowed to update delivery location",
-        );
-      }
+    const supervisorId = getWorkingSupervisorId(req.user);
 
-      /*
-       * Normal driver:
-       * supervisor = assigned supervisor
-       *
-       * Supervisor Driver Mode:
-       * supervisor = themselves
-       */
-      const supervisorId =
-        getWorkingSupervisorId(
-          req.user,
-        );
+    if (!supervisorId) {
+      throw httpError(
+        "Unable to determine location supervisor",
+        400,
+      );
+    }
 
-      if (
-        !supervisorId
-      ) {
-        res.status(400);
+    /*
+     * Same service as foreground Socket.IO.
+     */
+    const result = await updateDriverLocation({
+      driverId: req.user._id,
+      supervisorId,
+      payload: req.body,
+    });
 
-        throw new Error(
-          "Unable to determine location supervisor",
-        );
-      }
+    /*
+     * Background HTTP requests must broadcast
+     * through the same supervisor socket room.
+     *
+     * Do not rebroadcast stale or duplicate points.
+     */
+    const io = req.app.get("io");
 
-      /*
-       * Shared persistence logic.
-       */
-      const result =
-        await updateDriverLocation({
-          driverId:
-            req.user._id,
+    if (result.accepted && io) {
+      io.to(`supervisor:${supervisorId.toString()}`).emit(
+        "driver:location:update",
+        result.liveLocation,
+      );
+    }
 
-          supervisorId,
+    if (!io) {
+      console.warn(
+        "[Location] Socket.IO instance is unavailable",
+      );
+    }
 
-          payload:
-            req.body,
+    return res.json({
+      success: true,
+      accepted: result.accepted,
 
-          saveHistory:
-            true,
-        });
+      // Retained for existing mobile API compatibility.
+      location: result.location,
 
-      /*
-       * IMPORTANT:
-       *
-       * Background location enters
-       * through REST, but supervisor
-       * still receives exactly the
-       * same live socket event.
-       */
-      const io =
-        req.app.get(
-          "io",
-        );
+      recordedAt: result.liveLocation.recordedAt,
 
-      if (io) {
-        io.to(
-          `supervisor:${supervisorId.toString()}`,
-        ).emit(
-          "driver:location:update",
+      locationId:
+        result.location?._id?.toString() ?? null,
 
-          result.liveLocation,
-        );
-      }
+      shiftId: result.liveLocation.shiftId,
 
-      return res.json({
-        success:
-          true,
-
-        location:
-          result.location,
-
-        recordedAt:
-          result.liveLocation
-            .recordedAt,
-
-        locationId:
-          result.location?._id?.toString() ??
-          null,
-
-        shiftId:
-          result.liveLocation
-            .shiftId,
-
-        isWorking:
-          result.liveLocation
-            .isWorking,
-      });
-    },
-  );
+      isWorking: result.liveLocation.isWorking,
+    });
+  },
+);
 
 /**
- * DRIVER
+ * DRIVER / DELIVERY SUPERVISOR
  *
- * Get own latest location.
+ * GET /api/locations/me
  */
 export const getMyLocation = asyncHandler(
   async (req, res) => {
-    if (!canPerformDriverWork(
-    req.user,
-  )) {
-      res.status(403);
-      throw new Error(
+    if (!canPerformDriverWork(req.user)) {
+      throw httpError(
         "This user is not allowed to access delivery location",
+        403,
       );
     }
 
@@ -255,26 +137,27 @@ export const getMyLocation = asyncHandler(
       driver: req.user._id,
     });
 
-    res.json({
+    return res.json({
       success: true,
       location,
     });
-  }
+  },
 );
-
 
 /**
  * SUPERVISOR
  *
- * Get latest locations of all drivers
- * assigned to this supervisor.
+ * GET /api/locations/drivers
+ *
+ * Return latest known location for each
+ * assigned driver.
  */
 export const getMyDriversLocations = asyncHandler(
   async (req, res) => {
     if (req.user.role !== "supervisor") {
-      res.status(403);
-      throw new Error(
-        "Only supervisors can access driver locations"
+      throw httpError(
+        "Only supervisors can access driver locations",
+        403,
       );
     }
 
@@ -282,41 +165,56 @@ export const getMyDriversLocations = asyncHandler(
       supervisor: req.user._id,
     })
       .populate(
-  "driver",
-  [
-    "_id",
-    "name",
-    "shortName",
-    "phone",
-    "profilePicture",
-    "vehicleType",
-    "isActive",
-  ].join(" "),
-)
+        "driver",
+        [
+          "_id",
+          "name",
+          "shortName",
+          "phone",
+          "profilePicture",
+          "vehicleType",
+          "isActive",
+        ].join(" "),
+      )
       .sort({
         recordedAt: -1,
       });
 
-    res.json({
-      success: true,
-      count: locations.length,
-      locations,
-    });
-  }
-);
+    /*
+     * Exclude orphaned locations and accounts
+     * that no longer belong to the supervisor.
+     *
+     * This keeps the existing map response shape.
+     */
+    const validLocations = locations.filter((location) => {
+      const driver = location.driver;
 
+      if (!driver || typeof driver === "string") {
+        return false;
+      }
+
+      return driver.isActive !== false;
+    });
+
+    return res.json({
+      success: true,
+      count: validLocations.length,
+      locations: validLocations,
+    });
+  },
+);
 
 /**
  * SUPERVISOR
  *
- * Get latest location of one driver.
+ * GET /api/locations/drivers/:driverId
  */
 export const getDriverLocation = asyncHandler(
   async (req, res) => {
     if (req.user.role !== "supervisor") {
-      res.status(403);
-      throw new Error(
-        "Only supervisors can access driver locations"
+      throw httpError(
+        "Only supervisors can access driver locations",
+        403,
       );
     }
 
@@ -327,8 +225,7 @@ export const getDriverLocation = asyncHandler(
     }).select("_id name iqamaId isActive");
 
     if (!driver) {
-      res.status(404);
-      throw new Error("Driver not found");
+      throw httpError("Driver not found", 404);
     }
 
     const location = await DriverLocation.findOne({
@@ -336,74 +233,27 @@ export const getDriverLocation = asyncHandler(
       supervisor: req.user._id,
     });
 
-    res.json({
+    return res.json({
       success: true,
-
       driver,
-
       location,
     });
-  }
+  },
 );
 
-
+/**
+ * Temporary compatibility endpoint.
+ *
+ * Remove its route in location.routes.js
+ * after updating that file.
+ *
+ * No location history is stored or returned.
+ */
 export const getDriverShiftLocationHistory = asyncHandler(
-  async (req, res) => {
-    if (req.user.role !== "supervisor") {
-      res.status(403);
-      throw new Error(
-        "Only supervisors can access location history"
-      );
-    }
-
-    const driver = await User.findOne({
-      _id: req.params.driverId,
-      role: "driver",
-      supervisor: req.user._id,
-    }).select("_id");
-
-    if (!driver) {
-      res.status(404);
-      throw new Error("Driver not found");
-    }
-
-    const shift = await DriverShift.findOne({
-      _id: req.params.shiftId,
-      driver: driver._id,
-      supervisor: req.user._id,
+  async (_req, res) => {
+    return res.status(410).json({
+      success: false,
+      message: "Location history is no longer available",
     });
-
-    if (!shift) {
-      res.status(404);
-      throw new Error("Shift not found");
-    }
-
-    const locations =
-      await DriverLocationHistory.find({
-        driver: driver._id,
-        supervisor: req.user._id,
-        shift: shift._id,
-      })
-        .sort({
-          recordedAt: 1,
-        })
-        .select(
-          "latitude longitude accuracy speed heading recordedAt"
-        );
-
-    res.json({
-      success: true,
-
-      shift: {
-        id: shift._id,
-        startedAt: shift.startedAt,
-        endedAt: shift.endedAt,
-        status: shift.status,
-      },
-
-      count: locations.length,
-
-      locations,
-    });
-  }
+  },
 );
