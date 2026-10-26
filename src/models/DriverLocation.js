@@ -1,3 +1,5 @@
+//models/DriverLocation.js
+
 import mongoose from "mongoose";
 
 const driverLocationSchema = new mongoose.Schema(

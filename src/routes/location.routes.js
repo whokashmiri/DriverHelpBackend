@@ -1,10 +1,8 @@
-// routes/location.routes.js
 
 import express from "express";
 
 import {
   getDriverLocation,
-  getDriverShiftLocationHistory,
   getMyDriversLocations,
   getMyLocation,
   updateMyLocation,
@@ -14,51 +12,39 @@ import { protect } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
+/*
+ * All location endpoints require authentication.
+ */
 router.use(protect);
 
-/**
- * DRIVER
+/*
+ * DRIVER / DELIVERY SUPERVISOR
+ *
  * Update latest location.
+ *
+ * Used by Expo background location tracking.
  */
-router.post(
-  "/me",
-  updateMyLocation
-);
+router.post("/me", updateMyLocation);
 
-/**
- * DRIVER
+/*
+ * DRIVER / DELIVERY SUPERVISOR
+ *
  * Get own latest location.
  */
-router.get(
-  "/me",
-  getMyLocation
-);
+router.get("/me", getMyLocation);
 
-/**
+/*
  * SUPERVISOR
- * Get latest locations of all own drivers.
+ *
+ * Get latest locations of assigned drivers.
  */
-router.get(
-  "/drivers",
-  getMyDriversLocations
-);
+router.get("/drivers", getMyDriversLocations);
 
-/**
+/*
  * SUPERVISOR
- * Get one driver's latest location.
+ *
+ * Get latest location of one assigned driver.
  */
-router.get(
-  "/drivers/:driverId",
-  getDriverLocation
-);
-
-/**
- * SUPERVISOR
- * Get one driver's route/history for one shift.
- */
-router.get(
-  "/drivers/:driverId/shifts/:shiftId/history",
-  getDriverShiftLocationHistory
-);
+router.get("/drivers/:driverId", getDriverLocation);
 
 export default router;

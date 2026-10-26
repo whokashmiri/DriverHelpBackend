@@ -62,6 +62,17 @@ driverShiftSchema.index({
   status: 1,
 });
 
+driverShiftSchema.index(
+  { driver: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: "active",
+    },
+    name: "unique_active_shift_per_driver",
+  },
+);
+
 export const DriverShift =
   mongoose.models.DriverShift ||
   mongoose.model("DriverShift", driverShiftSchema);
