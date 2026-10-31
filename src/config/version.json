@@ -1,0 +1,10 @@
+{
+  "android": {
+    "latestVersionCode": 2,
+    "minimumVersionCode": 2,
+    "forceUpdate": false,
+    "enforceMissingVersion": false,
+    "enforceSocket": false,
+    "storeUrl": "https://play.google.com/store/apps/details?id=com.drivo.mobileapp"
+  }
+}

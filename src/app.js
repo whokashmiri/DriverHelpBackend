@@ -10,6 +10,7 @@ import driverRoutes from "./routes/driver.routes.js";
 import shiftRoutes from "./routes/shift.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
+import appVersionRoutes from "./routes/appVersion.routes.js";
 
 import {
   errorHandler,
@@ -62,6 +63,8 @@ app.use((req, res, next) => {
 
   next();
 });
+
+app.use("/api/app", appVersionRoutes);
 
 /**
  * API routes
