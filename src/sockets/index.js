@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 
 import { User } from "../models/User.js";
 import { registerLocationSocket } from "./location.socket.js";
+import {checkAppVersion,} from "../services/appVersion.service.js";
 
 async function authenticateSocket(
   socket,
@@ -68,17 +69,54 @@ async function authenticateSocket(
       );
     }
 
-    socket.user =
-      user;
+    const versionResult = await checkAppVersion({
+        role: user.role,
+        platform: socket.handshake.auth?.platform,
+        versionCode: socket.handshake.auth?.versionCode,
+        socket: true,
+    });
+
+    if (!versionResult.allowed) {
+        const error = new Error(
+        versionResult.message
+      );
+
+        error.data = {
+          code: versionResult.code,
+          minimumVersionCode:
+          versionResult.minimumVersionCode,
+          latestVersionCode:
+          versionResult.latestVersionCode,
+          storeUrl: versionResult.storeUrl,
+        };
+
+      return next(error);
+      }
+
+    socket.user = user;
 
     next();
-  } catch {
-    next(
-      new Error(
-        "Invalid or expired authentication token",
-      ),
-    );
+} catch (error) {
+  if (error?.data?.code === "APP_UPDATE_REQUIRED") {
+    return next(error);
   }
+
+  if (
+    error?.message ===
+    "Invalid or expired authentication token"
+  ) {
+    return next(error);
+  }
+
+  console.error(
+    "[Socket] Authentication failed:",
+    error
+  );
+
+  return next(
+    new Error("Socket authentication failed")
+  );
+}
 }
 
 export function initializeSocket(
