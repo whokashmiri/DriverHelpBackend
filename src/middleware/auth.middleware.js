@@ -1,30 +1,68 @@
 import jwt from "jsonwebtoken";
+
 import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-export const protect = asyncHandler(async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+import {
+  checkAppVersion,
+} from "../services/appVersion.service.js";
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401);
-    throw new Error("Not authorized, token missing");
-  }
+export const protect = asyncHandler(
+  async (req, res, next) => {
+    const authHeader = req.headers.authorization;
 
-  const token = authHeader.split(" ")[1];
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ")
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized, token missing",
+      });
+    }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select("-password");
+    const token = authHeader.slice(7);
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized, invalid token",
+      });
+    }
+
+    const user = await User.findById(
+      decoded.id
+    ).select("-password");
 
     if (!user) {
-      res.status(401);
-      throw new Error("Not authorized, user not found");
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized, user not found",
+      });
     }
 
     req.user = user;
-    next();
-  } catch (error) {
-    res.status(401);
-    throw new Error("Not authorized, invalid token");
+
+    const result = await checkAppVersion({
+      role: user.role,
+      platform: req.headers["x-app-platform"],
+      versionCode: req.headers["x-app-version-code"],
+    });
+
+    if (!result.allowed) {
+      return res.status(426).json({
+        success: false,
+        ...result,
+      });
+    }
+
+    return next();
   }
-});
+);
