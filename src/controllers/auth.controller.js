@@ -128,6 +128,7 @@ res.status(201).json({
     supervisor:
       user.supervisor ??
       null,
+      vehicleType: user.vehicleType ?? null,
   },
 });
 });
@@ -177,6 +178,7 @@ export const login = asyncHandler(async (req, res) => {
       isActive: user.isActive,
       canDeliverOrders:
     user.canDeliverOrders,
+    vehicleType: user.vehicleType ?? null,
 
   supervisor:
     user.supervisor,
@@ -199,6 +201,7 @@ export const me = asyncHandler(async (req, res) => {
       isActive: user.isActive,
         canDeliverOrders:
     user.canDeliverOrders,
+    vehicleType: user.vehicleType ?? null,
 
   supervisor:
     user.supervisor,
