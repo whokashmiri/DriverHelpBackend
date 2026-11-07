@@ -1,3 +1,5 @@
+//models/DriverShift.js
+
 import mongoose from "mongoose";
 
 const driverShiftSchema = new mongoose.Schema(
@@ -33,6 +35,11 @@ const driverShiftSchema = new mongoose.Schema(
       default: null,
       min: 0,
     },
+
+    fourteenHourReminderSentAt: {
+  type: Date,
+  default: null,
+},
 
     status: {
       type: String,
