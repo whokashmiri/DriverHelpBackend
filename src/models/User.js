@@ -1,3 +1,5 @@
+//models/User.js
+
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 
@@ -163,10 +165,34 @@ supervisor: {
       index: true,
     },
 
-    lastLoginAt: {
-      type: Date,
-      default: null,
+   
+lastLoginAt: {
+  type: Date,
+  default: null,
+},
+
+// Expo push tokens registered by the driver's devices.
+pushTokens: {
+  type: [
+    {
+      _id: false,
+
+      token: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+
+      updatedAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
+  ],
+  default: [],
+  select: false,
+},
+
   },
   {
     timestamps: true,
