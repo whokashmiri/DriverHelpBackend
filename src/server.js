@@ -2,6 +2,12 @@
 
 import dotenv from "dotenv";
 import http from "http";
+const {
+  startNotificationScheduler,
+  stopNotificationScheduler,
+} = await import(
+  "./services/notificationScheduler.service.js"
+);
 
 dotenv.config();
 
@@ -27,6 +33,7 @@ const io =
 
 app.set("io", io);
 
+
 server.listen(
   PORT,
   "0.0.0.0",
@@ -34,8 +41,20 @@ server.listen(
     console.log(
       `Server running on port ${PORT}`,
     );
+
+    if (
+      process.env.ENABLE_NOTIFICATION_SCHEDULER ===
+      "true"
+    ) {
+      startNotificationScheduler();
+    } else {
+      console.log(
+        "[REMINDER] Scheduler disabled",
+      );
+    }
   },
 );
+
 
 function shutdown(signal) {
   console.log(
@@ -52,6 +71,8 @@ function shutdown(signal) {
     });
   });
 }
+
+stopNotificationScheduler();
 
 process.on(
   "SIGTERM",

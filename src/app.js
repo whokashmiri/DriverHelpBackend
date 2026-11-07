@@ -11,6 +11,7 @@ import shiftRoutes from "./routes/shift.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
 import appVersionRoutes from "./routes/appVersion.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 
 import {
   errorHandler,
@@ -97,6 +98,11 @@ app.use(
 app.use(
   "/api/stats",
   statsRoutes
+);
+
+app.use(
+  "/api/notifications",
+  notificationRoutes
 );
 
 /**
