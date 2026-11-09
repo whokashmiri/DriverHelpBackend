@@ -22,10 +22,16 @@ export const registerPushToken = asyncHandler(
   async (req, res) => {
     const { token } = req.body;
 
-    if (req.user.role !== "driver") {
-      res.status(403);
-      throw new Error("Only drivers can register push tokens");
-    }
+   if (
+  !["driver", "supervisor"].includes(
+    req.user.role,
+  )
+) {
+  res.status(403);
+  throw new Error(
+    "Only drivers and supervisors can register push tokens",
+  );
+}
 
     if (!req.user.isActive) {
       res.status(403);
