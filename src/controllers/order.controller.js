@@ -5,6 +5,10 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadBufferToCloudinary } from "../utils/uploadToCloudinary.js";
 import { getNextOrderId } from "../services/orderSequence.service.js";
 import { User } from "../models/User.js";
+
+import {
+  notifyOrderStatusChange,
+} from "../services/orderNotification.service.js";
 const TIME_ZONE = "Asia/Riyadh";
 
 
@@ -599,23 +603,6 @@ export const completeOrderDelivery =
         );
       }
 
-      // console.log(
-      //   "[Delivery] file received",
-      //   {
-      //     fieldname:
-      //       deliveryFile.fieldname,
-
-      //     mimetype:
-      //       deliveryFile.mimetype,
-
-      //     size:
-      //       deliveryFile.size,
-
-      //     bufferSize:
-      //       deliveryFile.buffer
-      //         ?.length,
-      //   },
-      // );
 
       const deliveryUpload =
         await uploadBufferToCloudinary(
@@ -669,14 +656,7 @@ order.deliveryPhoto = {
     deliveryTime,
 };
 
-/*
- * If pickup and delivery crossed
- * midnight in Riyadh, this becomes
- * 00:01 of the delivery day.
- *
- * pickupPhoto.takenAt is intentionally
- * left unchanged as the real photo time.
- */
+
 order.pickupTime =
   effectivePickupTime;
 
@@ -694,21 +674,23 @@ order.durationSeconds =
     )
   );
 
-order.status =
-  "delivered";
+order.status = "delivered";
 
 await order.save();
 
-      await order.save();
+// Notify driver and supervisor after successful save.
+void notifyOrderStatusChange(order).catch((error) => {
+  console.error(
+    "[ORDER PUSH] Delivery notification failed:",
+    error,
+  );
+});
 
-      res.json({
-        success: true,
-
-        message:
-          "Order delivered successfully",
-
-        order,
-      });
+res.json({
+  success: true,
+  message: "Order delivered successfully",
+  order,
+});
     },
   );
 
@@ -911,16 +893,21 @@ export const cancelOrder =
           )
         );
 
-      await order.save();
+     await order.save();
 
-      res.json({
-        success: true,
+// Notify driver and supervisor after cancellation.
+void notifyOrderStatusChange(order).catch((error) => {
+  console.error(
+    "[ORDER PUSH] Cancellation notification failed:",
+    error,
+  );
+});
 
-        message:
-          "Order cancelled successfully",
-
-        order,
-      });
+res.json({
+  success: true,
+  message: "Order cancelled successfully",
+  order,
+});
     }
   );
 export const getMyOrders = asyncHandler(
