@@ -21,19 +21,19 @@ function getId(value) {
 
 function getNotificationContent(status, driverName, orderNumber) {
   const orderLabel = orderNumber
-    ? ` #${orderNumber}`
+    ? ` رقم ${orderNumber}`
     : "";
 
   if (status === "delivered") {
     return {
       driver: {
-        title: "Delivery Completed",
-        body: `You successfully completed delivery${orderLabel}.`,
+        title: "اكتمل التوصيل",
+        body: `تم إكمال توصيل الطلب${orderLabel} بنجاح.`,
       },
 
       supervisor: {
-        title: "Delivery Completed",
-        body: `${driverName} completed delivery${orderLabel}.`,
+        title: "اكتمل التوصيل",
+        body: `أكمل ${driverName} توصيل الطلب${orderLabel}.`,
       },
     };
   }
@@ -41,13 +41,13 @@ function getNotificationContent(status, driverName, orderNumber) {
   if (status === "cancelled") {
     return {
       driver: {
-        title: "Delivery Cancelled",
-        body: `Your delivery${orderLabel} has been cancelled.`,
+        title: "تم إلغاء التوصيل",
+        body: `تم إلغاء توصيل الطلب${orderLabel}.`,
       },
 
       supervisor: {
-        title: "Delivery Cancelled",
-        body: `${driverName} cancelled delivery${orderLabel}.`,
+        title: "تم إلغاء التوصيل",
+        body: `قام ${driverName} بإلغاء توصيل الطلب${orderLabel}.`,
       },
     };
   }
