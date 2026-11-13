@@ -1,5 +1,11 @@
+
 import { DriverShift } from "../models/DriverShift.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+
+import {
+  notifySupervisorShiftStarted,
+  notifySupervisorShiftEnded,
+} from "../services/shiftNotification.service.js";
 
 function canPerformDriverWork(user) {
   return (
@@ -23,14 +29,13 @@ function getShiftSupervisorId(user) {
   return null;
 }
 
-
+/**
+ * DRIVER
+ * Start a new shift.
+ */
 export const startShift = asyncHandler(
   async (req, res) => {
-    if (
-      !canPerformDriverWork(
-        req.user,
-      )
-    ) {
+    if (!canPerformDriverWork(req.user)) {
       res.status(403);
 
       throw new Error(
@@ -39,9 +44,7 @@ export const startShift = asyncHandler(
     }
 
     const supervisorId =
-      getShiftSupervisorId(
-        req.user,
-      );
+      getShiftSupervisorId(req.user);
 
     if (!supervisorId) {
       res.status(400);
@@ -51,17 +54,11 @@ export const startShift = asyncHandler(
       );
     }
 
-    /*
-     * A user cannot have two
-     * active shifts at once.
-     */
+  
     const activeShift =
       await DriverShift.findOne({
-        driver:
-          req.user._id,
-
-        status:
-          "active",
+        driver: req.user._id,
+        status: "active",
       });
 
     if (activeShift) {
@@ -74,30 +71,29 @@ export const startShift = asyncHandler(
 
     const shift =
       await DriverShift.create({
-        driver:
-          req.user._id,
-
-        supervisor:
-          supervisorId,
-
-        startedAt:
-          new Date(),
-
-        status:
-          "active",
+        driver: req.user._id,
+        supervisor: supervisorId,
+        startedAt: new Date(),
+        status: "active",
       });
+
+  
+    void notifySupervisorShiftStarted(shift).catch(
+      (error) => {
+        console.error(
+          "[SHIFT PUSH] Start notification failed:",
+          error,
+        );
+      },
+    );
 
     res.status(201).json({
       success: true,
-
-      message:
-        "Shift started successfully",
-
+      message: "Shift started successfully",
       shift,
     });
   },
 );
-
 
 /**
  * DRIVER
@@ -105,11 +101,7 @@ export const startShift = asyncHandler(
  */
 export const endShift = asyncHandler(
   async (req, res) => {
-    if (
-      !canPerformDriverWork(
-        req.user,
-      )
-    ) {
+    if (!canPerformDriverWork(req.user)) {
       res.status(403);
 
       throw new Error(
@@ -119,11 +111,8 @@ export const endShift = asyncHandler(
 
     const shift =
       await DriverShift.findOne({
-        driver:
-          req.user._id,
-
-        status:
-          "active",
+        driver: req.user._id,
+        status: "active",
       });
 
     if (!shift) {
@@ -134,60 +123,55 @@ export const endShift = asyncHandler(
       );
     }
 
-    const endedAt =
-      new Date();
+    const endedAt = new Date();
 
-    const durationSeconds =
-      Math.max(
-        0,
-        Math.floor(
-          (
-            endedAt.getTime() -
-            shift.startedAt.getTime()
-          ) / 1000,
-        ),
-      );
+    const durationSeconds = Math.max(
+      0,
+      Math.floor(
+        (
+          endedAt.getTime() -
+          shift.startedAt.getTime()
+        ) / 1000,
+      ),
+    );
 
-    shift.endedAt =
-      endedAt;
-
-    shift.durationSeconds =
-      durationSeconds;
-
-    shift.status =
-      "completed";
+    shift.endedAt = endedAt;
+    shift.durationSeconds = durationSeconds;
+    shift.status = "completed";
 
     await shift.save();
+
+  
+    void notifySupervisorShiftEnded(shift).catch(
+      (error) => {
+        console.error(
+          "[SHIFT PUSH] End notification failed:",
+          error,
+        );
+      },
+    );
 
     res.json({
       success: true,
 
-      message:
-        "Shift ended successfully",
+      message: "Shift ended successfully",
 
       shift: {
-        id:
-          shift._id,
+        id: shift._id,
 
-        startedAt:
-          shift.startedAt,
+        startedAt: shift.startedAt,
 
-        endedAt:
-          shift.endedAt,
+        endedAt: shift.endedAt,
 
-        durationSeconds:
-          shift.durationSeconds,
+        durationSeconds: shift.durationSeconds,
 
-        durationHours:
-          Number(
-            (
-              shift.durationSeconds /
-              3600
-            ).toFixed(2),
-          ),
+        durationHours: Number(
+          (
+            shift.durationSeconds / 3600
+          ).toFixed(2),
+        ),
 
-        status:
-          shift.status,
+        status: shift.status,
       },
     });
   },
@@ -196,111 +180,51 @@ export const endShift = asyncHandler(
 /**
  * DRIVER
  * Get currently active shift.
- *
- * Useful when app is reopened/restarted.
  */
-export const getActiveShift =
-  asyncHandler(
-    async (req, res) => {
-      // console.log(
-      //   "[Shift][Active] Looking up:",
-      //   {
-      //     userId:
-      //       req.user._id.toString(),
-
-      //     role:
-      //       req.user.role,
-
-      //     canDeliverOrders:
-      //       req.user.canDeliverOrders,
-      //   },
-      // );
-
-      const allUserShifts =
-        await DriverShift.find({
-          driver:
-            req.user._id,
-        })
-          .sort({
-            startedAt: -1,
-          })
-          .limit(5)
-          .select(
-            "_id driver supervisor status startedAt endedAt",
-          )
-          .lean();
-
-      // console.log(
-      //   "[Shift][Active] Recent shifts:",
-      //   allUserShifts.map(
-      //     (shift) => ({
-      //       id:
-      //         shift._id.toString(),
-
-      //       driver:
-      //         shift.driver?.toString(),
-
-      //       supervisor:
-      //         shift.supervisor?.toString(),
-
-      //       status:
-      //         shift.status,
-
-      //       startedAt:
-      //         shift.startedAt,
-
-      //       endedAt:
-      //         shift.endedAt,
-      //     }),
-      //   ),
-      // );
-
-      const shift =
-        await DriverShift.findOne({
-          driver:
-            req.user._id,
-
-          status:
-            "active",
-        }).sort({
+export const getActiveShift = asyncHandler(
+  async (req, res) => {
+    const allUserShifts =
+      await DriverShift.find({
+        driver: req.user._id,
+      })
+        .sort({
           startedAt: -1,
-        });
+        })
+        .limit(5)
+        .select(
+          "_id driver supervisor status startedAt endedAt",
+        )
+        .lean();
 
-      // console.log(
-      //   "[Shift][Active] Result:",
-      //   {
-      //     shiftId:
-      //       shift?._id?.toString() ??
-      //       null,
-
-      //     status:
-      //       shift?.status ??
-      //       null,
-      //   },
-      // );
-
-      res.json({
-        success: true,
-        shift,
+    const shift =
+      await DriverShift.findOne({
+        driver: req.user._id,
+        status: "active",
+      }).sort({
+        startedAt: -1,
       });
-    },
-  );
+
+    res.json({
+      success: true,
+      shift,
+    });
+  },
+);
 
 
-/**
- * DRIVER
- * Get driver's shift history.
- */
-export const getMyShifts = asyncHandler(async (req, res) => {
-  const shifts = await DriverShift.find({
-    driver: req.user._id,
-  }).sort({
-    startedAt: -1,
-  });
+export const getMyShifts = asyncHandler(
+  async (req, res) => {
+    const shifts =
+      await DriverShift.find({
+        driver: req.user._id,
+      }).sort({
+        startedAt: -1,
+      });
 
-  res.json({
-    success: true,
-    count: shifts.length,
-    shifts,
-  });
-});
+    res.json({
+      success: true,
+      count: shifts.length,
+      shifts,
+    });
+  },
+);
