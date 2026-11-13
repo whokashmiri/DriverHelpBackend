@@ -247,9 +247,9 @@ export async function processMorningReminders(
         const result =
           await sendPushToDriver({
             driver,
-            title: "Start Your Shift",
+            title: "ابدأ مناوبتك",
             body:
-              "Good morning! You haven't started your shift yet. Please start your shift.",
+            "صباح الخير! لم تبدأ مناوبتك بعد. يرجى بدء المناوبة.",
             data: {
               type: "shift_not_started",
               date: riyadh.date,
